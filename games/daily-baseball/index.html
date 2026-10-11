@@ -64,8 +64,11 @@
   #meterwrap { position:absolute; left:8px; right:8px; bottom:8px; background:rgba(255,255,255,.95);
                border-radius:14px; padding:10px; display:none; }
   #meter { position:relative; height:42px; background:#e9e4d8; border-radius:12px; overflow:hidden; }
-  #meter .perfect { position:absolute; top:0; bottom:0; background:#1f7a4c; opacity:.85; }
-  #meter .needle { position:absolute; top:-2px; bottom:-2px; width:6px; background:#20242e; border-radius:3px; }
+  #meter .perfect { position:absolute; top:0; bottom:0; background:#1f7a4c; opacity:.85; z-index:1; }
+  #meter-zones { position:absolute; top:0; bottom:0; left:0; right:0; z-index:1; display:none; }
+  #meter-zones .mzone { position:absolute; top:0; bottom:0; display:flex; align-items:center; justify-content:center; }
+  #meter-zones .mzone span { font-size:10px; font-weight:800; color:#fff; letter-spacing:.5px; text-shadow:0 1px 2px rgba(0,0,0,.55); }
+  #meter .needle { position:absolute; top:-2px; bottom:-2px; width:6px; background:#20242e; border-radius:3px; z-index:2; }
   #meterbtn { margin:8px 0 0; padding:12px; font-size:16px; }
   #swingbtn { position:absolute; left:50%; transform:translateX(-50%); bottom:118px; display:none;
               border:none; border-radius:999px; padding:16px 46px; font-size:20px; font-weight:800;
@@ -118,7 +121,7 @@
     </div>
     <div class="card">
       <p class="note" style="text-align:left"><b>How it plays</b><br>
-      • Top of each inning: YOU pitch to 3 CPU batters — pick a pitch, tap your spot right on the field, stop the meter in the green. Heat is fast, breaking stuff has a tiny zone — and it gets meaner with 2 strikes or runners on.<br>
+      • Top of each inning: YOU pitch to 3 CPU batters — pick a pitch, stop the needle in a zone. Corners are nasty, middle gets crushed. Heat is fast, breaking stuff is tiny — and it gets meaner with 2 strikes or runners on.<br>
       • Bottom: YOU bat 3 times — watch the field, tap SWING in the green.<br>
       • Win = more runs than the CPU. Ties count as a loss.<br>
       • One shot at the daily per day. Resets at midnight.</p>
@@ -151,6 +154,7 @@
         <p class="note" style="margin:0 0 6px" id="meter-label"><b>Stop the needle in the green!</b></p>
         <div id="meter">
           <div class="perfect" id="meter-perfect"></div>
+          <div id="meter-zones"></div>
           <div class="needle" id="meter-needle"></div>
         </div>
         <button class="btn btn-primary" id="meterbtn">STOP</button>
@@ -283,19 +287,19 @@ BB.meterParams=function(kind,S,pitchName,sameStreak){
   }
   var half=Math.max(BB.perfectHalf(kind==='pitch'?sameStreak:0)*zone,0.028);
   var stars=BB.starsFor(spd*(0.045/half));
-  return {speed:spd,half:half,stars:stars,tags:tags};
+  return {speed:spd,half:half,stars:stars,tags:tags,zoneF:zone};
 };
 
-/* one pitch by the player. target 0..8 (4=center). acc 0..1.
+/* one pitch by the player. target 0..4 (columns: 0/4 corners, 1/3 edges, 2 middle). acc 0..1.
    streak = consecutive same-pitch count BEFORE this pitch.
    returns event; mutates st via BB.applyPitchEvent. */
 BB.resolvePitch=function(rand,batter,pitch,target,acc,streak){
-  var corner=(target===0||target===2||target===6||target===8);
-  var locF = target===4 ? 0.75 : (corner?1.15:1.0);
+  var corner=(target===0||target===4);
+  var locF = target===2 ? 0.75 : (corner?1.15:1.0);
   var timeF = acc>=0.9?1.1 : acc>=0.7?1.0 : acc>=0.5?0.9 : 0.75;
   var predF = Math.max(0.7, 1-0.05*streak);
   var keff = BB.clamp(batter.k/100*locF*timeF*predF, 0.02, 0.98);
-  var ballP = (1-acc)*0.6*(target===4?0.35:1);
+  var ballP = (1-acc)*0.6*(target===2?0.35:1);
   if(rand()<ballP){
     if(rand()<0.12){ /* chase — treat as strike pitch */ }
     else return {type:'ball'};
@@ -510,7 +514,7 @@ setInterval(function(){ if(el('screen-menu').classList.contains('on')&&dailyLock
   var c=el('daily-countdown'); if(c)c.textContent=fmtCountdown(msToMidnight()); } },1000);
 
 /* ---------- game view state ---------- */
-var S=null, V={phase:null,selPitch:0,selTarget:4,meter:null,batPitch:null,
+var S=null, V={phase:null,selPitch:0,selTarget:2,meter:null,batPitch:null,mittX:null,
   seq:[],ball:null,swing:null,windupT:0,mittT:0,converge:null,react:null,ping:null,finishPitch:null};
 function log(msg){var L=el('gamelog');var d=document.createElement('div');d.innerHTML=msg;
   L.insertBefore(d,L.firstChild);while(L.children.length>4)L.removeChild(L.lastChild);}
@@ -531,13 +535,6 @@ var fcv=el('field'), fx=fcv.getContext('2d');
 var FIMG={};
 function fi(name,src){var im=new Image();im.src=src;FIMG[name]=im;return im;}
 function imgOk(im){return !!(im&&im.complete&&im.naturalWidth>0);}
-function tinted(src,color,alpha){
-  var c=document.createElement('canvas');c.width=src.naturalWidth;c.height=src.naturalHeight;
-  var g=c.getContext('2d');g.drawImage(src,0,0);
-  g.globalCompositeOperation='source-atop';g.globalAlpha=(alpha==null?0.62:alpha);
-  g.fillStyle=color;g.fillRect(0,0,c.width,c.height);
-  var im=new Image();im.src=c.toDataURL();return im;
-}
 /* scene geometry, tuned to img/field.jpg (960x600) */
 var L={
   mound:{x:480,y:300}, release:{x:480,y:252}, plate:{x:480,y:548},
@@ -546,6 +543,7 @@ var L={
   fielders:[{x:338,y:276},{x:578,y:276},{x:800,y:304},{x:160,y:304},
             {x:250,y:150},{x:480,y:118},{x:710,y:150}],
   runnerDot:{1:{x:890,y:270},2:{x:480,y:206},3:{x:70,y:270}},
+  fans:[{x:150,y:105,f:0},{x:300,y:100,f:1},{x:480,y:100,f:2},{x:660,y:100,f:1},{x:810,y:105,f:0}],
   hitSpot:{'1B':{x:800,y:332},'2B':{x:600,y:232},'3B':{x:350,y:200},'HR':{x:480,y:84},
            'groundout':{x:650,y:362},'flyout':{x:480,y:180},'lineout':{x:620,y:262}}
 };
@@ -554,12 +552,9 @@ function preloadField(){
   fi('field','img/field.jpg'); fi('pitcher','img/cut_pitcher.png');
   fi('batter','img/cut_batter.png'); fi('swingmid','img/cut_swing-mid.png');
   fi('swingfollow','img/cut_swing-follow.png'); fi('swingwhiff','img/cut_swing-whiff.png');
-}
-function fielderImg(){
-  if(FIMG.fielder)return FIMG.fielder;
-  if(!imgOk(FIMG.pitcher))return null;
-  FIMG.fielder=tinted(FIMG.pitcher,'#274b8f',0.6);
-  return FIMG.fielder;
+  fi('infielder','img/cut_infielder.png'); fi('outfielder','img/cut_outfielder.png');
+  fi('catcher2','img/cut_catcher2.png');
+  fi('fan1','img/cut_fan1.png'); fi('fan2','img/cut_fan2.png'); fi('fan3','img/cut_fan3.png');
 }
 function drawSprite(im,x,yfeet,h,flip){
   if(!imgOk(im))return;
@@ -600,7 +595,7 @@ function reactOff(who,now){
 }
 function resetFieldFx(){
   seqClear();V.ball=null;V.converge=null;V.swing=null;
-  V.mittT=0;V.windupT=0;V.react=null;V.ping=null;V.finishPitch=null;
+  V.mittT=0;V.windupT=0;V.react=null;V.ping=null;V.finishPitch=null;V.mittX=null;
   setCallout('');setHint('');
 }
 /* ball paths — same PITCH_FLIGHT table as before, mapped into scene coords */
@@ -615,7 +610,7 @@ var PITCH_FLIGHT={
 function pitchPosAt(b,p){
   var F=b.F,late=Math.max(0,(p-0.55)/0.45);late*=late;
   return{
-    x:L.release.x+(L.mitt.x-L.release.x)*p+F.cut*late*5,
+    x:L.release.x+((V.mittX||L.mitt.x)-L.release.x)*p+F.cut*late*5,
     y:L.release.y+(L.mitt.y-L.release.y)*p-F.arc*Math.sin(Math.PI*p)*2.2+F.drop*late*2.2,
     r:6+5*p
   };
@@ -662,10 +657,17 @@ function drawField(now){
     fx.beginPath();fx.arc(rp.x,rp.y,11,0,7);
     fx.fillStyle='#1f7a4c';fx.fill();fx.lineWidth=3;fx.strokeStyle='#fff';fx.stroke();
   }
-  /* fielders (converge on batted balls) */
-  var fim=fielderImg()||FIMG.pitcher;
+  /* fans in the stands */
+  var fanImgs=['fan1','fan2','fan3'];
+  for(var fn=0;fn<L.fans.length;fn++){
+    var fan=L.fans[fn];
+    var fbob=Math.sin(now/700+fn*2.1)*2;
+    drawSprite(FIMG[fanImgs[fan.f]],fan.x,fan.y+fbob,54,false);
+  }
+  /* fielders (converge on batted balls): infielders at 2B/SS/3B/1B, outfielders deep */
   for(var fi2=0;fi2<L.fielders.length;fi2++){
     var f=L.fielders[fi2],ox=0,oy=0;
+    var fim=(fi2<4?FIMG.infielder:FIMG.outfielder)||FIMG.pitcher;
     if(V.converge){
       var cp=Math.min(1,(now-V.converge.t0)/V.converge.dur),e=pitchEase(cp);
       var dx=V.converge.spot.x-f.x,dy=V.converge.spot.y-f.y,d=Math.hypot(dx,dy)||1;
@@ -674,29 +676,14 @@ function drawField(now){
     var bob=(V.phase==='pitchAnim'||V.phase==='swingAnim')?0:Math.sin(now/520+fi2*1.7)*2;
     drawSprite(fim,f.x+ox,f.y+oy+bob,54,false);
   }
-  /* strike zone */
-  if(V.phase==='target'||V.phase==='pitchSelect'){
-    var z=L.zone,hot=V.phase==='target';
-    fx.save();
-    fx.strokeStyle=hot?'#c62f2f':'rgba(255,255,255,.6)';
-    fx.lineWidth=hot?4:2.5;fx.setLineDash([9,7]);
-    rr(z.x,z.y,z.w,z.h,10);fx.stroke();fx.setLineDash([]);
-    if(hot){
-      fx.strokeStyle='rgba(198,47,47,.45)';fx.lineWidth=1.5;
-      for(var c=1;c<3;c++){
-        fx.beginPath();fx.moveTo(z.x+z.w*c/3,z.y);fx.lineTo(z.x+z.w*c/3,z.y+z.h);fx.stroke();
-        fx.beginPath();fx.moveTo(z.x,z.y+z.h*c/3);fx.lineTo(z.x+z.w,z.y+z.h*c/3);fx.stroke();
-      }
-    }
-    fx.restore();
-  }
+  /* (in-scene zone tap removed — pitching is one tap on the meter now) */
   /* pitcher (+windup / react) */
   var px=L.mound.x,py=L.mound.y;
   if(V.windupT){var w=Math.min(1,(now-V.windupT)/450);py-=Math.abs(Math.sin(w*Math.PI))*14;}
   var pro=reactOff('P',now);px+=pro.dx;py+=pro.dy;
   drawSprite(FIMG.pitcher,px,py,84,false);
   /* catcher */
-  drawSprite(fim,L.catcher.x,L.catcher.y,L.catcher.h,false);
+  drawSprite(FIMG.catcher2||FIMG.pitcher,L.catcher.x,L.catcher.y,L.catcher.h,false);
   /* mitt pop */
   if(V.mittT){
     var ma=(now-V.mittT)/320;
@@ -704,7 +691,7 @@ function drawField(now){
       var ms=1+0.45*Math.sin(ma*Math.PI);
       fx.save();fx.font=Math.round(54*ms)+'px serif';
       fx.textAlign='center';fx.textBaseline='middle';
-      fx.fillText('🧤',L.mitt.x,L.mitt.y);fx.restore();
+      fx.fillText('🧤',(V.mittX||L.mitt.x),L.mitt.y);fx.restore();
     }else V.mittT=0;
   }
   /* batter (+swing flipbook / react) */
@@ -732,20 +719,9 @@ function fieldTick(){
   if(!el('screen-game').classList.contains('on')||!S)return;
   drawField(performance.now());
 }
-/* canvas taps: pick the zone spot, or skip the pitch sequence */
+/* canvas taps: skip the pitch sequence */
 fcv.addEventListener('click',function(e){
-  var r=fcv.getBoundingClientRect();
-  var x=(e.clientX-r.left)*FW/r.width,y=(e.clientY-r.top)*FH/r.height;
-  if(V.phase==='target'){
-    var z=L.zone;
-    if(x>=z.x&&x<=z.x+z.w&&y>=z.y&&y<=z.y+z.h){
-      var col=Math.min(2,Math.floor((x-z.x)/(z.w/3)));
-      var row=Math.min(2,Math.floor((y-z.y)/(z.h/3)));
-      V.selTarget=row*3+col;
-      V.ping={x:x,y:y,t0:performance.now()};
-      phaseMeter('pitch');
-    }
-  }else if(V.phase==='pitchAnim'&&V.finishPitch){V.finishPitch();}
+  if(V.phase==='pitchAnim'&&V.finishPitch){V.finishPitch();}
 });
 preloadField();
 requestAnimationFrame(fieldTick);
@@ -755,7 +731,7 @@ function startGame(mode){
   var date=todayStr();
   var daily = mode==='daily' ? BB.makeDaily(date) : BB.makeDaily('practice|'+Date.now()+Math.random());
   S=BB.newGame(daily,mode); S.date=date;
-  V.phase=null;V.selPitch=0;V.selTarget=4;V.meter=null;V.batPitch=null;
+  V.phase=null;V.selPitch=0;V.selTarget=2;V.meter=null;V.batPitch=null;V.mittX=null;
   resetFieldFx(); preloadField();
   el('game-mode').textContent=mode==='daily'?'DAILY':'PRACTICE';
   clearLog(); show('screen-game');
@@ -778,18 +754,28 @@ function phasePitchSelect(){
     var b=document.createElement('button'); b.className='chip';
     var pm=BB.PITCH_METER[p.name]||{spd:1,zone:1};
     b.innerHTML='<b>'+p.name+'</b><small>'+p.speed+' mph · '+'⚡'.repeat(BB.starsFor(pm.spd/pm.zone))+'</small>';
-    b.onclick=function(){V.selPitch=i;phaseTarget();};
+    b.onclick=function(){V.selPitch=i;phaseMeter('pitch');};
     box.appendChild(b);
   });
   renderScore();
 }
-/* ----- pitching: tap your spot in the in-scene strike zone ----- */
-function phaseTarget(){
-  V.phase='target'; hideOverlays();
-  setHint('Tap your spot — corners are nasty, middle gets crushed');
-  el('batterline').textContent=S.daily.pitches[V.selPitch].name+' — tap the zone';
+/* ----- timing meter (shared, slim overlay) -----
+   PITCH: one tap picks location AND execution. The bar is 5 zones —
+   CORNER (narrow, nasty) / EDGE / MIDDLE (wide, crushable) / EDGE / CORNER.
+   Zone = location; distance from the zone's center = execution accuracy.
+   BAT: classic single green window, unchanged. */
+var ZONE_DEFS=[{n:'CORNER',c:'#1f7a4c'},{n:'EDGE',c:'#d9a441'},{n:'MIDDLE',c:'#c62f2f'},{n:'EDGE',c:'#d9a441'},{n:'CORNER',c:'#1f7a4c'}];
+function pitchZones(zoneF){
+  var z=BB.clamp(zoneF,0.55,1.3);
+  var cw=0.12*z, ew=0.20*z;
+  var b=[0,cw,cw+ew,1-cw-ew,1-cw,1], out=[];
+  for(var i=0;i<5;i++)out.push({a:b[i],b:b[i+1]});
+  return out;
 }
-/* ----- timing meter (shared, slim overlay) ----- */
+function zoneOfPos(zones,pos){
+  for(var i=0;i<zones.length;i++)if(pos<=zones[i].b+1e-9)return i;
+  return zones.length-1;
+}
 function phaseMeter(kind){
   V.phase='meter';
   hideOverlays(); setHint('');
@@ -799,12 +785,29 @@ function phaseMeter(kind){
   var pName = kind==='pitch' ? S.daily.pitches[V.selPitch].name : V.batPitch.name;
   var P=BB.meterParams(kind,S,pName,streak);
   var bolt='⚡'.repeat(P.stars);
-  el('meter-label').innerHTML = kind==='pitch'
-    ? '<b>Stop the needle in the green!</b> ('+pName+' · '+bolt+(P.tags.length?' · '+P.tags.join(', '):'')+')'
-    : '<b>Tap in the green to swing!</b> ('+pName+' coming · '+bolt+(P.tags.length?' · '+P.tags.join(', '):'')+')';
-  var pf=el('meter-perfect');
-  pf.style.left=((0.5-P.half)*100)+'%'; pf.style.width=((P.half*2)*100)+'%';
-  V.meter={kind:kind,t0:performance.now(),period:1100/P.speed,pos:0,half:P.half,stopped:false};
+  var mz=el('meter-zones'); mz.innerHTML='';
+  if(kind==='pitch'){
+    el('meter-label').innerHTML='<b>Stop the needle in a zone!</b> ('+pName+' · '+bolt+(P.tags.length?' · '+P.tags.join(', '):'')+')';
+    el('meter-perfect').style.display='none';
+    var zones=pitchZones(P.zoneF);
+    V.meter={kind:kind,t0:performance.now(),period:1100/P.speed,pos:0,zones:zones,stopped:false};
+    zones.forEach(function(z,i){
+      var d=document.createElement('div');
+      d.className='mzone';
+      d.style.left=(z.a*100)+'%'; d.style.width=((z.b-z.a)*100)+'%';
+      d.style.background=ZONE_DEFS[i].c;
+      d.innerHTML='<span>'+ZONE_DEFS[i].n+'</span>';
+      mz.appendChild(d);
+    });
+    mz.style.display='block';
+  }else{
+    el('meter-label').innerHTML='<b>Tap in the green to swing!</b> ('+pName+' coming · '+bolt+(P.tags.length?' · '+P.tags.join(', '):'')+')';
+    el('meter-perfect').style.display='';
+    mz.style.display='none';
+    var pf=el('meter-perfect');
+    pf.style.left=((0.5-P.half)*100)+'%'; pf.style.width=((P.half*2)*100)+'%';
+    V.meter={kind:kind,t0:performance.now(),period:1100/P.speed,pos:0,half:P.half,stopped:false};
+  }
   requestAnimationFrame(meterTick);
 }
 function meterTick(now){
@@ -820,12 +823,22 @@ function meterAcc(){
   var d=Math.abs(M.pos-0.5);
   return BB.clamp(1-d/0.5,0,1);
 }
-/* ----- meter tap ----- */
+/* ----- meter tap: pitch = zone is location, zone-center distance is execution ----- */
 function meterTap(){
   if(V.phase!=='meter'||!V.meter)return;
-  var kind=V.meter.kind; /* capture BEFORE meterAcc stops the meter */
-  var acc=meterAcc();
-  if(kind==='pitch') doPlayerPitch(acc); else doPlayerBat(acc);
+  var kind=V.meter.kind;
+  if(kind==='pitch'){
+    var M=V.meter, zi=zoneOfPos(M.zones,M.pos);
+    var z=M.zones[zi], c=(z.a+z.b)/2, hw=(z.b-z.a)/2;
+    var acc=BB.clamp(1-Math.abs(M.pos-c)/hw,0,1);
+    V.selTarget=zi;
+    V.mittX=L.mitt.x+[-38,-18,0,18,38][zi]; /* corners paint the black, middle grooves one */
+    stopMeter();
+    doPlayerPitch(acc);
+  }else{
+    var acc2=meterAcc();
+    doPlayerBat(acc2);
+  }
 }
 el('meterbtn').onclick=meterTap;
 el('swingbtn').onclick=meterTap;
