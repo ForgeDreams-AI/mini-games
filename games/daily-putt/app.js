@@ -148,7 +148,8 @@ function buildGreen(rng,archId){
       return s*v*Math.sin(Math.PI*u/W);
     };})(s,W,ca,sa);
   }else if(archId==='pinch'){
-    s=0.012+rng()*0.008;
+    s=0.007+rng()*0.005; /* softened 2026-10-10: was 0.012-0.020, which demanded
+      ~8deg aim corrections on top of the bunker thread -- helpless, not nasty */
     tA=lineA+(rng()-0.5)*0.8;
     var bmx=(ball.x+cup.x)/2, bmy=(ball.y+cup.y)/2;
     var px2=-(cup.y-ball.y)/d, py2=(cup.x-ball.x)/d;
@@ -238,13 +239,16 @@ function simulate(green,aimA,powerM,opts){
   return{holed:false,x:x,y:y,trail:trail,maxBreak:maxBreak,lipped:lipped,offGreen:offGreen,plugged:plugged};
 }
 
-/* grade the stroke: ratio of taken power to pin power */
+/* grade the stroke: absolute deviation from pin power.
+   The needle sweeps 0->1.15 in 3.4s; PURE = within +/-0.0575 units =
+   10% of the sweep on EVERY green (design: timing-window rule).
+   Ratio-based bands made short putts brutally tight (2.2% of sweep)
+   and lag putts trivial (11%) -- inverted difficulty. */
 function gradeStroke(m,pinM){
-  var r=m/pinM;
-  if(r<0.85)return'EASED';
-  if(r<0.95)return'SOLID';
-  if(r<=1.12)return'PURE';
-  return'OVERHIT';
+  var d=Math.abs(m-pinM);
+  if(d<=0.0575)return'PURE';
+  if(d<=0.115)return'SOLID';
+  return m<pinM?'EASED':'OVERHIT';
 }
 
 /* ================= rendering ================= */
@@ -302,7 +306,7 @@ function driftDirOf(h,x,y){
 }
 function drawDriftGrid(green){
   var SP=4.2, bb=green.bbox;
-  ctx.fillStyle='rgba(18,32,56,0.55)';
+  ctx.fillStyle='rgba(18,32,56,0.68)';
   for(var gx=bb.x0+2;gx<=bb.x1-2;gx+=SP){
     for(var gy=bb.y0+2;gy<=bb.y1-2;gy+=SP){
       if(!inPoly(gx,gy,green.poly))continue;
@@ -387,14 +391,19 @@ function drawGreen(green,state){
   ctx.strokeStyle='rgba(255,255,255,0.85)';ctx.lineWidth=2.5;
   ctx.beginPath();ctx.arc(cp.x,cp.y,cupRpx,0,Math.PI*2);ctx.stroke();
 
-  /* tall flagstick + red pennant */
+  /* tall flagstick + red pennant (waves briefly on a make) */
   var fh=cupRpx*6.4;
   ctx.strokeStyle='#7f1a1a';ctx.lineWidth=Math.max(3.5,cam.scale*0.16);ctx.lineCap='round';
   ctx.beginPath();ctx.moveTo(cp.x,cp.y);ctx.lineTo(cp.x,cp.y-fh);ctx.stroke();
+  var wave=(state.holed&&state.holeT<1.4)?Math.sin(state.holeT*14)*(1-state.holeT/1.4)*cupRpx*0.9:0;
   ctx.fillStyle='#e23b3b';
   ctx.beginPath();ctx.moveTo(cp.x,cp.y-fh);
-  ctx.lineTo(cp.x+cupRpx*3.1,cp.y-fh+cupRpx*1.0);
+  ctx.lineTo(cp.x+cupRpx*3.1,cp.y-fh+cupRpx*1.0+wave);
   ctx.lineTo(cp.x,cp.y-fh+cupRpx*2.0);ctx.closePath();ctx.fill();
+  ctx.strokeStyle='rgba(255,255,255,0.75)';ctx.lineWidth=1.5;
+  ctx.beginPath();ctx.moveTo(cp.x,cp.y-fh);
+  ctx.lineTo(cp.x+cupRpx*3.1,cp.y-fh+cupRpx*1.0+wave);
+  ctx.lineTo(cp.x,cp.y-fh+cupRpx*2.0);ctx.closePath();ctx.stroke();
 
   /* edge arrow: if the cup is ever off-screen (panned away), point at it */
   var mrg=18,vx0=mrg,vx1=cw-mrg,vy0=TOP_H+mrg,vy1=ch-PANEL_H-mrg;
@@ -438,10 +447,10 @@ function drawGreen(green,state){
     }
   }
 
-  /* ball (hidden once holed) */
+  /* ball (hidden once holed; shrinks during the drop) */
   if(!state.holed){
     var bp2=w2s(state.ballX,state.ballY);
-    var brpx=Math.max(6,BALL_R*cam.scale);
+    var brpx=Math.max(6,BALL_R*cam.scale)*(state.ballScale==null?1:state.ballScale);
     ctx.fillStyle='rgba(0,0,0,0.28)';
     ctx.beginPath();ctx.ellipse(bp2.x+2,bp2.y+brpx*0.55,brpx*0.95,brpx*0.4,0,0,Math.PI*2);ctx.fill();
     var bgr=ctx.createRadialGradient(bp2.x-brpx*0.3,bp2.y-brpx*0.35,brpx*0.1,bp2.x,bp2.y,brpx);
@@ -453,6 +462,18 @@ function drawGreen(green,state){
     ctx.strokeStyle='rgba(255,255,255,'+Math.max(0,0.8-t*0.5)+')';
     ctx.lineWidth=3;
     ctx.beginPath();ctx.arc(cp.x,cp.y,cupRpx+((t*60)%26),0,Math.PI*2);ctx.stroke();
+  }
+
+  /* confetti (screen space) */
+  if(state.parts&&state.parts.length){
+    for(var pi2=0;pi2<state.parts.length;pi2++){
+      var pt2=state.parts[pi2];
+      ctx.save();ctx.translate(pt2.x,pt2.y);ctx.rotate(pt2.rot);
+      ctx.globalAlpha=Math.max(0,Math.min(1,pt2.life/0.4));
+      ctx.fillStyle=pt2.c;ctx.fillRect(-3,-2,6,4);
+      ctx.restore();
+    }
+    ctx.globalAlpha=1;
   }
 
   /* green name + distance */
@@ -495,8 +516,11 @@ function esc(s){return String(s).replace(/[&<>"]/g,function(c){return{'&':'&amp;
 
 var G={
   mode:'daily', greens:[], hole:0,
-  phase:'idle',            /* aim | power | roll | done */
+  phase:'idle',            /* aim | power | roll | drop | done */
   aimA:null, ballX:0, ballY:0, trail:[], holed:false, holeT:0,
+  ballScale:null,          /* set during the hole-out drop */
+  dropT:0, dropFrom:null,
+  parts:[],                /* confetti particles (screen space) */
   meterOn:false, meterT:0, meterM:0,
   results:[],              /* per hole: {holed, inches} */
   rolling:null
@@ -540,7 +564,7 @@ function startHole(){
   G.ballX=g.ball.x;G.ballY=g.ball.y;
   G.trail=[];G.holed=false;G.holeT=0;G.rolling=null;
   G.meterOn=false;
-  phaseHint.textContent='Tap the green to aim. Count the dots to the hole \u2014 each dot is one tick of power.';
+  phaseHint.textContent='Tap the green to aim. Count the dots to the hole \u2014 halves count! Each dot is one tick of power.';
   phaseBtn.textContent='Lock the line';
   phaseBtn.classList.remove('hidden');
   meterWrap.classList.add('hidden');
@@ -576,8 +600,7 @@ canvas.addEventListener('pointerup',function(e){
 phaseBtn.addEventListener('click',function(){
   if(G.phase==='aim'){
     G.phase='power';G.meterOn=true;G.meterT=0;G.puttArmed=false;
-    var dots=Math.max(1,Math.round(G.greens[G.hole].dist/DOT_FT));
-    phaseHint.textContent='Tap PUTT, then STOP the needle at tick '+dots+' \u2014 count the dots to the hole.';
+    phaseHint.textContent='Tap PUTT to start the needle, then STOP it at the \u2691 pin \u2014 that\u2019s your dot count, exactly.';
     phaseBtn.textContent='PUTT';
     meterWrap.classList.remove('hidden');
     mPin.style.left=(clamp(G.greens[G.hole].pinM,0,1.12)/1.15*100)+'%';
@@ -608,15 +631,29 @@ function finishHole(){
   var g=G.greens[G.hole],r=G.rolling.res;
   G.phase='done';G.holed=r.holed;G.holeT=0.001;
   G.ballX=r.x;G.ballY=r.y;
+  if(r.holed){
+    /* confetti burst at the cup (screen space; visual only) */
+    var cs=w2s(g.cup.x,g.cup.y);
+    var crng=mulberry32((Date.now()^0x5f3d)>>>0);
+    var cols=['#ffd23c','#ffffff','#22c55e','#e23b3b'];
+    for(var ci=0;ci<16;ci++){
+      var ca=crng()*Math.PI*2, csp=60+crng()*170;
+      G.parts.push({x:cs.x,y:cs.y,vx:Math.cos(ca)*csp,vy:Math.sin(ca)*csp-130,
+        rot:crng()*6.28,vr:(crng()-0.5)*14,life:0.85,c:cols[ci%4]});
+    }
+  }
   var dft=dist2(r.x,r.y,g.cup.x,g.cup.y);
   var rec={holed:r.holed,ft:dft,inches:Math.round(dft*12)};
   G.results[G.hole]=rec;
   var gc=G.rolling.grade;
   var gcls=gc==='PURE'?'g-pure':gc==='SOLID'?'g-solid':gc==='EASED'?'g-eased':'g-over';
+  var along=(r.x-g.ball.x)*Math.cos(g.lineA)+(r.y-g.ball.y)*Math.sin(g.lineA);
+  var missTxt=r.plugged?'Plugged in the bunker.':
+    r.offGreen?'Off the green.':
+    r.lipped?'Lipped out \u2014 too hot.':
+    'Missed \u2014 '+fmtDist(dft)+(along>g.dist?' long.':' short.');
   resultLine.innerHTML='<span class="grade '+gcls+'">'+gc+'</span>'+
-    (r.holed?'<span style="color:#15803d">HOLED!</span>':
-      r.plugged?'Plugged in the bunker.':
-      r.offGreen?'Off the green.':'Missed \u2014 '+fmtDist(dft)+' short.');
+    (r.holed?'<span style="color:#15803d">HOLED!</span>':missTxt);
   resultLine.classList.remove('hidden');
   phaseHint.textContent=G.hole<8?'On to the next green.':'That\u2019s all nine.';
   phaseBtn.textContent=G.hole<8?'Next hole':'See results';
@@ -666,8 +703,9 @@ function loop(t){
       }
       if(rr.shown>=rr.res.trail.length){
         if(rr.res.holed){
-          G.ballX=rr.res.x;G.ballY=rr.res.y;G.trail=rr.res.trail;
-          finishHole();
+          /* hole-out drop: ball sinks into the cup over 0.18s, then score */
+          G.phase='drop';G.dropT=0;G.ballScale=1;
+          G.dropFrom={x:G.ballX,y:G.ballY};
         }else{
           /* ease the ball to its rest spot */
           var k=Math.min(1,dt*3);
@@ -676,9 +714,28 @@ function loop(t){
         }
       }
     }
+    if(G.phase==='drop'){
+      /* ball drops into the cup: ease to cup center while shrinking */
+      G.dropT+=dt;
+      var gdr=G.greens[G.hole];
+      var dk=Math.min(1,G.dropT/0.18), de=1-Math.pow(1-dk,3);
+      G.ballX=G.dropFrom.x+(gdr.cup.x-G.dropFrom.x)*de;
+      G.ballY=G.dropFrom.y+(gdr.cup.y-G.dropFrom.y)*de;
+      G.ballScale=1-dk*0.92;
+      if(dk>=1){G.ballScale=null;finishHole();}
+    }
+    if(G.parts.length){
+      /* confetti physics (screen space) */
+      for(var cpi=G.parts.length-1;cpi>=0;cpi--){
+        var pt=G.parts[cpi];
+        pt.life-=dt;
+        if(pt.life<=0){G.parts.splice(cpi,1);continue;}
+        pt.vy+=520*dt;pt.x+=pt.vx*dt;pt.y+=pt.vy*dt;pt.rot+=pt.vr*dt;
+      }
+    }
     if(G.holed)G.holeT+=dt;
     drawGreen(g,{phase:G.phase,aimA:G.aimA,ballX:G.ballX,ballY:G.ballY,
-      trail:G.trail,holed:G.holed,holeT:G.holeT});
+      trail:G.trail,holed:G.holed,holeT:G.holeT,ballScale:G.ballScale,parts:G.parts});
   }
 }
 
