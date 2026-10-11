@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Daily Putt">
+<meta name="theme-color" content="#2e7d3a">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="../../icons/putt-180.png">
+<title>Daily Putt</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="wrap">
+  <canvas id="game"></canvas>
+
+  <!-- top HUD -->
+  <div id="hud">
+    <div id="topRow">
+      <a id="homeBtn" href="../..">&#8962;</a>
+      <div id="holeLabel">HOLE 1 / 9</div>
+      <div id="modeTag">DAILY</div>
+    </div>
+    <div id="scoreStrip"></div>
+  </div>
+
+  <!-- bottom phase panel -->
+  <div id="panel">
+    <div id="phaseHint">Tap the green to set your line.</div>
+    <div id="meterWrap" class="hidden">
+      <div id="meter">
+        <div id="mEase">EASE</div>
+        <div id="mMid">100</div>
+        <div id="mOver">OVER</div>
+        <div id="mPin" title="pin"></div>
+        <div id="mNeedle"></div>
+      </div>
+    </div>
+    <button id="phaseBtn" class="hidden">Lock the line</button>
+    <div id="resultLine" class="hidden"></div>
+  </div>
+
+  <!-- start screen -->
+  <div id="startScreen" class="overlay">
+    <h1 class="title">⛳ Daily Putt</h1>
+    <p class="subtitle">Nine nasty greens. One putt each.<br>Pick your line. Pick your power.</p>
+    <div id="lockBox" class="hidden">
+      <div>Today&rsquo;s 9 are done.</div>
+      <div id="lockTime">0:00:00</div>
+      <div id="lockScore"></div>
+    </div>
+    <button id="playBtn" class="big">Play today&rsquo;s 9</button>
+    <button id="practiceBtn" class="ghost">Practice (random greens)</button>
+    <div class="row">
+      <button id="nameBtn" class="small">name: not set</button>
+      <button id="boardBtn" class="small">leaderboard</button>
+    </div>
+  </div>
+
+  <!-- name claim -->
+  <div id="nameScreen" class="overlay hidden">
+    <h2 class="title2">Leaderboard name</h2>
+    <p class="subtitle" id="nameSub">Claim a name for the daily leaderboard.</p>
+    <input id="nameInput" maxlength="16" placeholder="your name" autocomplete="off">
+    <div id="phraseWrap" class="hidden">
+      <input id="phraseInput" type="password" placeholder="secret phrase (4+ chars)" autocomplete="off">
+    </div>
+    <div id="nameMsg" class="msg"></div>
+    <div class="row">
+      <button id="nameGo" class="big">CHECK NAME</button>
+      <button id="nameCancel" class="ghost">cancel</button>
+    </div>
+  </div>
+
+  <!-- results / leaderboard -->
+  <div id="resultsScreen" class="overlay hidden">
+    <h2 class="title2" id="resTitle">Results</h2>
+    <div id="resScore" class="resScore"></div>
+    <div class="secTitle" id="lbTitle">Today&rsquo;s leaderboard</div>
+    <div id="lbList" class="list"></div>
+    <div class="secTitle">Your recent rounds</div>
+    <div id="histList" class="list"></div>
+    <div class="row">
+      <button id="logoutBtn" class="ghost small">forget name</button>
+      <button id="resultsClose" class="big">Done</button>
+    </div>
+  </div>
+</div>
+<script src="app.js"></script>
+</body>
+</html>
