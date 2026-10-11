@@ -180,10 +180,17 @@ function buildGreen(rng,archId){
       return s*Math.exp(-(dd*dd)/(w2*w2));
     };})(s,w2,mx,my,nx2,ny2);
   }else if(archId==='bowl'){
+    /* depression centered at (not exactly on) the cup: everything feeds
+       toward the hole, with a whisper of break to read. Low point at the
+       geometric center confused players -- chevrons pointed away from
+       the hole even though they were true downhill. */
     s=0.55+rng()*0.3;
-    h=(function(s,R){return function(x,y){
-      var r=Math.sqrt(x*x+y*y)/R; return s*r*r;
-    };})(s,R);
+    var ba=rng()*Math.PI*2, bd=2+rng()*2.5;
+    var bcx=cup.x+Math.cos(ba)*bd, bcy=cup.y+Math.sin(ba)*bd;
+    h=(function(s,R,bcx,bcy){return function(x,y){
+      var dx=x-bcx,dy=y-bcy;
+      var r=Math.sqrt(dx*dx+dy*dy)/R; return s*r*r;
+    };})(s,R,bcx,bcy);
   }else if(archId==='sbreak'){
     s=0.022+rng()*0.014;
     var W=R*1.6, rot=rng()*Math.PI;
@@ -371,7 +378,7 @@ function roundRectP(x,y,w,h,r){
    Samples the same numeric gradient the physics uses. */
 var nowS=0; /* seconds, updated in the main loop */
 function drawSlopeArrows(green){
-  var SP=6.5, bb=green.bbox;
+  var SP=10, bb=green.bbox; /* wider tiles: fewer, calmer chevrons */
   ctx.lineCap='round';ctx.lineJoin='round';
   for(var gx=bb.x0+3;gx<=bb.x1-3;gx+=SP){
     for(var gy=bb.y0+3;gy<=bb.y1-3;gy+=SP){
@@ -380,18 +387,24 @@ function drawSlopeArrows(green){
       if(dist2(gx,gy,G.ballX,G.ballY)<2.4)continue;
       var si=slopeInfo(green.h,gx,gy);
       if(si.flat)continue;
+      /* fade chevrons far from the ball: the local read stays crisp,
+         the field stays readable without shouting */
+      var bd=dist2(gx,gy,G.ballX,G.ballY);
+      if(bd>60)continue;
+      var fade=clamp(1.2-bd/48,0.3,1);
       /* keep chevrons small enough that neighboring tiles don't collide
          into scribbles on severe greens */
       var n=si.pct<2.5?1:2;
-      var size=clamp(8+si.pct*2.2,9,22);
-      var alpha=clamp(0.38+si.pct*0.09,0.38,0.7);
+      var size=clamp(8+si.pct*2.2,9,18);
+      var alpha=clamp(0.38+si.pct*0.09,0.38,0.7)*fade;
       var ang=Math.atan2(si.dy,si.dx);
+      /* march DOWNHILL: positions translate along (dx,dy) as flow rises */
       var flow=((nowS*0.9+(gx*0.7+gy*1.3)*0.05)%1+1)%1;
       var gap=size*1.25;
       ctx.strokeStyle='rgba(13,28,52,'+alpha.toFixed(3)+')';
       ctx.lineWidth=Math.max(2.5,size*0.22);
       for(var k=0;k<n;k++){
-        var off=(k-flow)*gap;
+        var off=(k+flow)*gap;
         var wx=gx+si.dx*off, wy=gy+si.dy*off;
         if(!inPoly(wx,wy,green.poly))continue; /* keep chevrons on the green */
         var s=w2s(wx,wy);
@@ -407,7 +420,7 @@ function drawSlopeArrows(green){
 
 /* the aim marker: tap the green to drop it, line shows ball -> marker,
    gold ring + distance pill. Turns gold once the line is locked. */
-function drawAim(){
+function drawAim(green){
   if(!G.markerSet)return;
   if(G.phase!=='aim'&&G.phase!=='locked')return;
   var locked=(G.phase==='locked');
@@ -426,30 +439,45 @@ function drawAim(){
   ctx.beginPath();ctx.arc(ms.x,ms.y,mr,0,Math.PI*2);ctx.stroke();
   ctx.fillStyle=locked?'#fbbf24':'#ffffff';
   ctx.beginPath();ctx.arc(ms.x,ms.y,mr*0.35,0,Math.PI*2);ctx.fill();
-  /* distance pill */
+  /* distance pill -- nudged below the marker if it would cover the
+     slope badge (stops "5 FT"+"FLAT" reading as "5 FLAT") */
   var d=dist2(G.ballX,G.ballY,G.markerX,G.markerY);
   var lbl=Math.round(d)+' FT';
   ctx.font='800 13px -apple-system,sans-serif';
   var tw=ctx.measureText(lbl).width;
   var lx=ms.x+mr+8,ly=ms.y-mr-8;
+  var br=slopeBadgeRect(green);
+  if(rectsOverlap(lx-9,ly-14,tw+18,26,br.x,br.y,br.w,br.h))ly=ms.y+mr+22;
   ctx.fillStyle='rgba(17,24,39,0.88)';
   roundRectP(lx-9,ly-14,tw+18,26,9);ctx.fill();
   ctx.fillStyle='#ffffff';ctx.textAlign='left';
   ctx.fillText(lbl,lx,ly+5);
 }
 
-/* slope % badge near the ball: the green-reading aid.
-   "1.3%" + arrow pointing downhill (same gradient as physics). */
-function drawSlopeBadge(green){
-  if(G.phase!=='aim'&&G.phase!=='locked')return;
+/* slope badge rect (no drawing): used for drawing AND for keeping the
+   distance pill from overlapping it ("5 FT" + "FLAT" reading as "5 FLAT") */
+function slopeBadgeRect(green){
   var si=slopeInfo(green.h,G.ballX,G.ballY);
   var s=w2s(G.ballX,G.ballY);
-  var txt=si.flat?'FLAT':si.pct.toFixed(1)+'%';
   ctx.font='800 13px -apple-system,sans-serif';
+  var txt=si.flat?'FLAT':si.pct.toFixed(1)+'%';
   var tw=ctx.measureText(txt).width;
   var bw=tw+(si.flat?18:40);
   var bx=s.x-bw/2, by=s.y-52;
   if(by<TOP_H+34)by=s.y+30; /* ball near the top: badge goes below */
+  return {x:bx,y:by,w:bw,h:26,si:si};
+}
+function rectsOverlap(ax,ay,aw,ah,bx,by,bw,bh){
+  return ax<bx+bw&&ax+aw>bx&&ay<by+bh&&ay+ah>by;
+}
+
+/* slope % badge near the ball: the green-reading aid.
+   "1.3%" + arrow pointing downhill (same gradient as physics). */
+function drawSlopeBadge(green){
+  if(G.phase!=='aim'&&G.phase!=='locked')return;
+  var r=slopeBadgeRect(green), si=r.si;
+  var txt=si.flat?'FLAT':si.pct.toFixed(1)+'%';
+  var bx=r.x, by=r.y, bw=r.w;
   ctx.fillStyle='rgba(17,24,39,0.88)';
   roundRectP(bx,by,bw,26,9);ctx.fill();
   var tx=bx+9;
@@ -540,7 +568,7 @@ function drawGreen(green,state){
   ctx.lineTo(cp.x,cp.y-fh+cupRpx*2.0);ctx.closePath();ctx.stroke();
 
   /* aim marker + line */
-  drawAim();
+  drawAim(green);
 
   /* slope % badge near the ball */
   drawSlopeBadge(green);
@@ -603,6 +631,7 @@ var holeLabel=$('holeLabel'),modeTag=$('modeTag'),
     phaseHint=$('phaseHint'),phaseBtn=$('phaseBtn'),
     resultLine=$('resultLine'),
     needleBar=$('needleBar'),needleEl=$('needle'),
+    tickLayer=$('tickLayer'),tickLabels=$('tickLabels'),
     startScreen=$('startScreen'),playBtn=$('playBtn'),
     practiceBtn=$('practiceBtn'),lockBox=$('lockBox'),
     lockTime=$('lockTime'),lockScore=$('lockScore'),
@@ -683,6 +712,7 @@ function startHole(){
   G.trail=[];G.holed=false;G.holeT=0;G.rolling=null;
   G.needle=0;G.sweepT0=null;
   needleBar.classList.add('hidden');
+  clearTicks();
   setBtn('lock');
   phaseHint.textContent='Tap the green to move the marker \u00B7 then LOCK THE LINE';
   resultLine.classList.add('hidden');
@@ -718,6 +748,25 @@ canvas.addEventListener('pointerdown',function(e){
   }
 });
 
+/* distance calibration ticks on the needle bar: at 25/50/75% of pure
+   power, show the expected carry in feet for the CURRENT marker distance,
+   so EASED stops can be calibrated. carry ~= markerDist * (n/PURE_MID). */
+function buildTicks(){
+  var md=dist2(G.ballX,G.ballY,G.markerX,G.markerY);
+  tickLayer.innerHTML='';tickLabels.innerHTML='';
+  [0.25,0.5,0.75].forEach(function(f){
+    var n=f*PURE_MID;
+    var tk=document.createElement('div');
+    tk.className='tick';tk.style.left=n+'%';
+    tickLayer.appendChild(tk);
+    var lb=document.createElement('div');
+    lb.className='tickLab';lb.style.left=n+'%';
+    lb.textContent='\u2248'+Math.round(md*f)+"'";
+    tickLabels.appendChild(lb);
+  });
+}
+function clearTicks(){tickLayer.innerHTML='';tickLabels.innerHTML='';}
+
 /* ---- the action button: LOCK THE LINE -> PUTT -> STOP -> next ---- */
 phaseBtn.addEventListener('click',function(){
   if(G.phase==='aim'&&G.markerSet){
@@ -728,6 +777,7 @@ phaseBtn.addEventListener('click',function(){
     G.phase='sweep';
     G.sweepT0=null;G.needle=0;
     needleBar.classList.remove('hidden');
+    buildTicks();
     setBtn('stop');
     phaseHint.textContent='STOP in the gold \u2014 just under 100!';
   }else if(G.phase==='sweep'){
@@ -741,6 +791,7 @@ function doStop(){
   if(G.phase!=='sweep')return;
   var n=G.needle;
   needleBar.classList.add('hidden');
+  clearTicks();
   var g=G.greens[G.hole];
   var sx=G.ballX,sy=G.ballY;
   var markerDist=dist2(sx,sy,G.markerX,G.markerY);
@@ -859,7 +910,7 @@ function frame(t){
       var el=(t-G.sweepT0)/1000;
       var p=(el/SWEEP_T)%2;
       G.needle=p<1?p*100:(2-p)*100;
-      needleEl.style.left='calc('+G.needle.toFixed(2)+'% - 2px)';
+      needleEl.style.left='calc('+G.needle.toFixed(2)+'% - 5.5px)'; /* 11px needle, centered */
     }
     if(G.phase==='roll'&&G.rolling){
       var rr=G.rolling;
