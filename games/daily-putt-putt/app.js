@@ -49,7 +49,7 @@ var V_STOP=0.12;         /* below this the ball is at rest           */
 var DMAX=60;             /* putt distance at full (1.0) power        */
 var BAR_MAX=1.15;        /* power headroom above 1.0                 */
 var DT=1/240;            /* physics substep: no tunneling, ever      */
-var RAIL_REST=0.72;      /* wooden rails: bouncy but not wild        */
+var RAIL_REST=0.82;      /* wooden rails: lively, bank shots work       */
 var AIM_SECS=7;          /* aim timer: auto-lock when it hits zero   */
 
 /* ================= the needle (signature timing mechanic) ==============
@@ -103,7 +103,7 @@ function closestOnPoly(px,py,poly){
     var t=L2>1e-9?clamp(((px-ax)*dx+(py-ay)*dy)/L2,0,1):0;
     var qx=ax+dx*t,qy=ay+dy*t;
     var d=(px-qx)*(px-qx)+(qy-py)*(qy-py);
-    if(d<bd){bd=d;best={x:qx,y:qy};}
+    if(d<bd){bd=d;best={x:qx,y:qy,nx:px-qx,ny:py-qy};}
   }
   return best;
 }
@@ -282,71 +282,77 @@ function buildHole(rng,defIdx){
 
   if(id==='firsttee'){
     /* the gentle opener: straight lane, faint uphill finish */
-    spine=[[0,0],[38,0]];w=4;
+    spine=[[0,0],[38,0]];w=4.75;
     ball={x:5,y:0};cup={x:33,y:j1(1)};
     h=tiltField(0.004,0);
   }else if(id==='windmill'){
-    /* the classic: four blades sweep the lane -- thread the gaps */
-    spine=[[0,0],[46,0]];w=4;
+    /* the classic: four blades sweep the lane -- thread the gaps.
+       blades stay well short of the rails so there's always room */
+    spine=[[0,0],[46,0]];w=4.75;
     ball={x:5,y:0};cup={x:41,y:j1(1)};
     h=flatField();
-    movers.push({type:'blade',cx:23,cy:0,len:3.5,wid:0.55,arms:4,
+    movers.push({type:'blade',cx:23,cy:0,len:2.6,wid:0.55,arms:4,
       omega:(0.8+rng()*0.25)*(rng()<0.5?1:-1),
-      phase:rng()*Math.PI*2,rest:0.55});
+      phase:rng()*Math.PI*2,rest:0.72});
     deco.windmill={cx:23};
   }else if(id==='bankjob'){
-    /* dogleg left: the outer rail is your friend -- bank it round */
-    spine=[[0,0],[17,0],[21.5,2],[23.5,6.5],[24,11],[24,26]];w=4;
+    /* dogleg left: the outer rail is your friend -- bank it round.
+       lively rails make the bank shot sing */
+    spine=[[0,0],[17,0],[21.5,2],[23.5,6.5],[24,11],[24,26]];w=4.75;
     ball={x:5,y:0};cup={x:24,y:21+j1(1)};
     h=flatField();
   }else if(id==='volcano'){
-    /* a big cone sits mid-lane: go around, or die it over the top */
-    spine=[[0,0],[44,0]];w=4.5;
+    /* a big cone sits mid-lane: go around, or die it over the top.
+       the cone stays well inside the rails -- flat road around it */
+    spine=[[0,0],[44,0]];w=5;
     ball={x:5,y:0};cup={x:38,y:j1(1)};
-    var vh=1.05+rng()*0.25,vr=4.6+rng()*0.8;
+    var vh=1.05+rng()*0.25,vr=3.1+rng()*0.5;
     h=moundField(vh,vr,22,0);
     deco.crater={x:22,y:0,r:vr*0.35};
   }else if(id==='bumpers'){
-    /* three lively bumpers staggered down the lane */
-    spine=[[0,0],[46,0]];w=4;
+    /* three lively bumpers staggered down the lane -- room to dodge */
+    spine=[[0,0],[46,0]];w=4.75;
     ball={x:5,y:0};cup={x:41,y:j1(1)};
     h=flatField();
-    bumpers.push({x:16,y:1.6+j1(0.4),r:1.3,rest:1.02});
-    bumpers.push({x:24,y:-1.6+j1(0.4),r:1.3,rest:1.02});
-    bumpers.push({x:32,y:1.6+j1(0.4),r:1.3,rest:1.02});
+    bumpers.push({x:16,y:1.6+j1(0.4),r:1.15,rest:1.02});
+    bumpers.push({x:24,y:-1.6+j1(0.4),r:1.15,rest:1.02});
+    bumpers.push({x:32,y:1.6+j1(0.4),r:1.15,rest:1.02});
   }else if(id==='drawbridge'){
-    /* a plank bridge over water: stay on the boards or re-hit */
-    spine=[[0,0],[50,0]];w=4;
+    /* a plank bridge over water: stay on the boards or re-hit.
+       the deck is wide enough for an imperfect bounce */
+    spine=[[0,0],[50,0]];w=4.75;
     ball={x:5,y:0};cup={x:45,y:j1(0.8)};
     h=flatField();
     var wx0=19,wx1=35;
-    hazards.push({poly:[{x:wx0,y:-4},{x:wx1,y:-4},{x:wx1,y:-1.7},{x:wx0,y:-1.7}]});
-    hazards.push({poly:[{x:wx0,y:1.7},{x:wx1,y:1.7},{x:wx1,y:4},{x:wx0,y:4}]});
-    deco.bridge={x0:wx0,x1:wx1,hw:1.7};
+    hazards.push({poly:[{x:wx0,y:-4.75},{x:wx1,y:-4.75},{x:wx1,y:-2.2},{x:wx0,y:-2.2}]});
+    hazards.push({poly:[{x:wx0,y:2.2},{x:wx1,y:2.2},{x:wx1,y:4.75},{x:wx0,y:4.75}]});
+    deco.bridge={x0:wx0,x1:wx1,hw:2.2};
   }else if(id==='ramp'){
     /* the lane climbs to an upper tier: bring enough pace */
-    spine=[[0,0],[46,0]];w=4;
+    spine=[[0,0],[46,0]];w=4.75;
     ball={x:5,y:0};cup={x:40,y:j1(1)};
     h=addFields(
       stepField(0.85+rng()*0.15,5,24,0,1,0),
       tiltField(0.003,0));
     deco.rampEdge={x:24};
   }else if(id==='slalom'){
-    /* two gates slide across the lane in opposite rhythm */
-    spine=[[0,0],[50,0]];w=5;
+    /* two gates slide across the lane in opposite rhythm. each gate is
+       SHORTER than the lane is wide, so a gap always slides with it */
+    spine=[[0,0],[50,0]];w=5.5;
     ball={x:5,y:0};cup={x:45,y:j1(1)};
     h=flatField();
-    movers.push({type:'gate',x1:18,y1:-5,x2:18,y2:5,ax:0,ay:1,
-      amp:2.2+rng()*0.6,omega:0.85+rng()*0.25,phase:rng()*Math.PI*2,
-      wid:0.7,rest:0.6});
-    movers.push({type:'gate',x1:34,y1:-5,x2:34,y2:5,ax:0,ay:1,
-      amp:2.2+rng()*0.6,omega:0.85+rng()*0.25,phase:rng()*Math.PI*2+Math.PI,
-      wid:0.7,rest:0.6});
+    movers.push({type:'gate',x1:18,y1:-3,x2:18,y2:3,ax:0,ay:1,
+      amp:1.8+rng()*0.4,omega:0.85+rng()*0.25,phase:rng()*Math.PI*2,
+      wid:0.7,rest:0.75});
+    movers.push({type:'gate',x1:34,y1:-3,x2:34,y2:3,ax:0,ay:1,
+      amp:1.8+rng()*0.4,omega:0.85+rng()*0.25,phase:rng()*Math.PI*2+Math.PI,
+      wid:0.7,rest:0.75});
   }else{ /* tunnel */
-    /* the finale: an S-lane, a dark tunnel, a mound guarding the cup */
-    spine=[[0,0],[18,0],[30,10],[46,10]];w=4;
+    /* the finale: an S-lane, a dark tunnel, a mound guarding the cup.
+       the mound guards -- it doesn't wall off */
+    spine=[[0,0],[18,0],[30,10],[46,10]];w=4.75;
     ball={x:5,y:0};cup={x:43,y:10+j1(0.8)};
-    h=addFields(moundField(0.5+rng()*0.15,3,37,10),tiltField(0.003,0.4));
+    h=addFields(moundField(0.5+rng()*0.15,2.4,37,10),tiltField(0.003,0.4));
     deco.tunnel={x:24,y:5};
   }
 
@@ -422,10 +428,16 @@ function simulate(hole,aimA,powerM,opts){
       c=collideBumper(x,y,vx,vy,bumpers[i]);
       if(c){x=c.x;y=c.y;vx=c.vx;vy=c.vy;}
     }
-    /* safety net: never leave the lane */
+    /* safety net: never leave the lane -- bounce off the closest rail
+       like a real rail instead of stalling */
     if(!inPoly(x,y,hole.poly)){
       var cp=closestOnPoly(x,y,hole.poly);
-      x=cp.x;y=cp.y;vx*=0.4;vy*=0.4;
+      var snx=cp.nx,sny=cp.ny;
+      var snl=Math.sqrt(snx*snx+sny*sny);
+      if(snl<1e-9){snx=1;sny=0;}else{snx/=snl;sny/=snl;}
+      x=cp.x+snx*BALL_R;y=cp.y+sny*BALL_R;
+      var svn=vx*snx+vy*sny;
+      if(svn>0){var sj=-(1+RAIL_REST)*svn;vx+=sj*snx;vy+=sj*sny;}
     }
     if(trail.length===0||dist2(x,y,trail[trail.length-1].x,trail[trail.length-1].y)>0.8)
       trail.push({x:x,y:y,t:t});
