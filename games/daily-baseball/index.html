@@ -871,7 +871,7 @@ function phaseMeter(kind){
     var pb=BB.pitchBand(S,V.selPitch);
     band=pb.band; P=pb.mp;
     var pName=S.daily.pitches[V.selPitch].name;
-    el('meter-label').innerHTML='🟢 <b>'+pName+'</b> — stop the needle in the green.<br><span style="font-weight:400">Where the green sits is where the pitch goes.</span>';
+    el('meter-label').innerHTML='🟢 <b>'+pName+'</b> — stop the needle in the green.<br><span style="font-weight:400">Where you stop the needle is where the pitch goes.</span>';
     mb.textContent='STOP'; mb.className='btn btn-primary';
     el('meter-axis').style.display='flex';
   }else{
