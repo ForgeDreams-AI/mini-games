@@ -7,10 +7,14 @@
    THE SHOT -- three steps:
    1. AIM: tap the green to drop the marker; line shows ball->marker.
       Marker shows the distance. Press LOCK THE LINE when happy.
+      A 7-second clock runs on every aim -- at zero the aim auto-locks
+      wherever the marker sits (defaults to the cup).
    2. POWER: press PUTT and the needle SWEEPS UP AND BACK DOWN,
       oscillating across a horizontal bar. PURE BAND is 82-87
       (near the top, NOT at the top); the very top is the OVER zone.
       Press STOP to stop the needle. STOP JUST UNDER 100.
+      The sweep runs 3% faster every hole: hole 1 is the base 1.5s,
+      hole 9 is ~1.18s -- the gold gets twitchy late in the round.
    3. OUTCOMES: PURE (in the band) = perfect pace for the marked
       distance + truest roll. OVERSWING (above the band) = too hot:
       blows past AND bends offline (push/pull). EASED (below) =
@@ -56,6 +60,7 @@ var DT=1/240;
    the top but NOT at the top; 87-100 is the OVER zone. STOP JUST UNDER 100. */
 var PURE_LO=82, PURE_HI=87, PURE_MID=84.5;
 var SWEEP_T=1.5;         /* seconds for the needle to travel 0 -> 100 */
+var AIM_T=7;             /* seconds to aim each putt before it auto-locks */
 var OVER_BEND_MAX=4*Math.PI/180; /* max offline bend at a 100 stop   */
 
 function needleGrade(n){
@@ -73,6 +78,9 @@ function overswingBend(n,seed){
   var dir=mulberry32(seed>>>0)()<0.5?-1:1;
   return dir*((n-PURE_HI)/(100-PURE_HI))*OVER_BEND_MAX;
 }
+/* difficulty ramp: the needle sweeps 3% faster every hole.
+   hole 1 = base speed; hole 9 ~= base x 1.267. */
+function sweepT(){return SWEEP_T/Math.pow(1.03,G.hole);}
 
 /* ================= green archetypes =================
    Each archetype builds a height-field closure h(x,y) plus metadata.
@@ -777,6 +785,7 @@ function $(id){return document.getElementById(id);}
 var holeLabel=$('holeLabel'),modeTag=$('modeTag'),
     scoreStrip=$('scoreStrip'),
     phaseHint=$('phaseHint'),phaseBtn=$('phaseBtn'),
+    aimTimer=$('aimTimer'),
     resultLine=$('resultLine'),
     needleBar=$('needleBar'),needleEl=$('needle'),
     tickLayer=$('tickLayer'),tickLabels=$('tickLabels'),
@@ -805,6 +814,7 @@ var G={
   results:[],              /* per hole: {putts} */
   rolling:null,
   needle:0, sweepT0:null,  /* needle sweep state */
+  aimT:AIM_T,              /* aim countdown: auto-locks at 0 */
   seedStr:''               /* daily date or practice seed, for determinism */
 };
 
@@ -862,6 +872,7 @@ function startHole(){
   G.putts=0;
   G.trail=[];G.holed=false;G.holeT=0;G.rolling=null;
   G.needle=0;G.sweepT0=null;
+  G.aimT=AIM_T; /* fresh 7s aim clock every putt */
   needleBar.classList.add('hidden');
   clearTicks();
   setBtn('lock');
@@ -904,6 +915,7 @@ canvas.addEventListener('pointerdown',function(e){
   }else if(G.phase==='locked'){
     /* tap-drag the green to go back and adjust in one gesture */
     G.phase='aim';
+    G.aimT=AIM_T; /* re-aiming restarts the 7s clock */
     dragging=true;dragOff=(e.pointerType==='mouse')?0:48;
     placeMarkerAt(e.clientX,e.clientY,dragOff);
     setBtn('lock');
@@ -937,11 +949,22 @@ function buildTicks(){
 function clearTicks(){tickLayer.innerHTML='';tickLabels.innerHTML='';}
 
 /* ---- the action button: LOCK THE LINE -> PUTT -> STOP -> next ---- */
+function lockAim(timedOut){
+  /* shared by the LOCK THE LINE button and the 7s aim-timer expiry */
+  if(G.phase!=='aim')return;
+  if(!G.markerSet){
+    var g0=G.greens[G.hole];
+    G.markerX=g0.cup.x;G.markerY=g0.cup.y;G.markerSet=true;
+  }
+  G.phase='locked';
+  setBtn('putt');
+  phaseHint.textContent=timedOut?
+    'TIME \u2014 aim locked \u00B7 press PUTT, then STOP in the gold.':
+    'Line locked \u2014 press PUTT, then STOP in the gold.';
+}
 phaseBtn.addEventListener('click',function(){
   if(G.phase==='aim'&&G.markerSet){
-    G.phase='locked';
-    setBtn('putt');
-    phaseHint.textContent='Line locked \u2014 press PUTT, then STOP in the gold.';
+    lockAim(false);
   }else if(G.phase==='locked'){
     G.phase='sweep';
     G.sweepT0=null;G.needle=0;
@@ -1032,6 +1055,7 @@ function settleStroke(){
   resultLine.classList.remove('hidden');
   /* re-aim from the lie; marker defaults back to the cup */
   G.phase='aim';
+  G.aimT=AIM_T; /* fresh 7s aim clock every putt */
   G.markerX=g.cup.x;G.markerY=g.cup.y;G.markerSet=true;
   G.trail=[];G.rolling=null;
   setBtn('lock');
@@ -1073,12 +1097,24 @@ function frame(t){
   if(G.greens.length&&G.hole<9){
     var g=G.greens[G.hole];
     if(G.phase==='sweep'){
-      /* the needle sweeps up and back down, repeatedly */
+      /* the needle sweeps up and back down, repeatedly --
+         3% faster every hole (difficulty ramp) */
       if(G.sweepT0==null)G.sweepT0=t;
       var el=(t-G.sweepT0)/1000;
-      var p=(el/SWEEP_T)%2;
+      var p=(el/sweepT())%2;
       G.needle=p<1?p*100:(2-p)*100;
       needleEl.style.left='calc('+G.needle.toFixed(2)+'% - 5.5px)'; /* 11px needle, centered */
+    }
+    if(G.phase==='aim'){
+      /* 7s aim clock: counts down only while the frame loop runs, so a
+         hidden tab naturally pauses it (rAF stops in background) */
+      G.aimT-=dt;
+      if(G.aimT<=0){G.aimT=0;lockAim(true);}
+      aimTimer.classList.remove('hidden');
+      aimTimer.textContent=Math.ceil(G.aimT);
+      aimTimer.classList.toggle('low',G.aimT<=3);
+    }else{
+      aimTimer.classList.add('hidden');
     }
     if(G.phase==='roll'&&G.rolling){
       var rr=G.rolling;
@@ -1325,7 +1361,7 @@ var PuttTest={
   resolveStroke:resolveStroke,puttOutcome:puttOutcome,
   scoreName:scoreName,fmtVsPar:fmtVsPar,shadeGrid:shadeGrid,buildShade:buildShade,
   PANEL_H:PANEL_H,TOP_H:TOP_H,PURE_LO:PURE_LO,PURE_HI:PURE_HI,PURE_MID:PURE_MID,
-  SWEEP_T:SWEEP_T,
+  SWEEP_T:SWEEP_T,AIM_T:AIM_T,sweepT:sweepT,
   consts:{FRICTION:FRICTION,SLOPE_G:SLOPE_G,CUP_R:CUP_R,V_CAP:V_CAP,DMAX:DMAX,
     BAR_MAX:BAR_MAX,V_STOP:V_STOP},
   flow:{ /* driven by the render smoke test */

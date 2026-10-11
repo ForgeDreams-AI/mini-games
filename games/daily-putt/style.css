@@ -32,6 +32,11 @@ html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; background: 
   background: rgba(255,255,255,.96); border-radius: 22px 22px 0 0;
   box-shadow: 0 -4px 18px rgba(0,0,0,.25); text-align: center; }
 #phaseHint { font-size: 15px; font-weight: 600; color: #374151; margin-bottom: 10px; min-height: 20px; }
+/* 7-second aim clock: clean pill above the instructions, red when low */
+#aimTimer { display: inline-block; min-width: 46px; padding: 4px 14px; margin-bottom: 8px;
+  background: #20242e; color: #fff; border-radius: 999px; font-size: 16px; font-weight: 900;
+  font-variant-numeric: tabular-nums; box-shadow: 0 2px 8px rgba(0,0,0,.25); }
+#aimTimer.low { background: #b91c1c; }
 #phaseBtn { background: #15803d; color: #fff; border: none; border-radius: 14px; padding: 14px 34px;
   font-size: 17px; font-weight: 800; letter-spacing: .5px; box-shadow: 0 4px 0 #14532d; }
 #phaseBtn:active { transform: translateY(2px); box-shadow: 0 2px 0 #14532d; }
