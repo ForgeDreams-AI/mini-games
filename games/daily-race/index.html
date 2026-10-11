@@ -205,8 +205,9 @@ function clamp(v,a,b){return v<a?a:(v>b?b:v);}
 function normAng(a){while(a>Math.PI)a-=2*Math.PI;while(a<-Math.PI)a+=2*Math.PI;return a;}
 
 var SEG_LEN=90, NSEG=150, SAMPLES=4;
-var MAXV=336, ACCEL=420, TURNSPD=3.1;   /* v5: +5% top speed */
-var CAR_HALF_W=18, BOUNCE_KEEP=0.8;
+var MAXV=380, ACCEL=470, TURNSPD=3.35;   /* v7: +13% top speed, nimbler steering */
+var CAR_HALF_W=16, BOUNCE_KEEP=0.8;      /* v7: slimmer player car threads gaps better */
+var CAR_DRAW_S=0.88, TRAFFIC_DRAW_S=1.2;/* v7: smaller player sprite, bigger traffic cars */
 var LANE_W=58;                        /* road width = lane count x lane width */
 var AIR_DUR=0.8, SPIN_DUR=0.6;        /* bomb pop / oil spin durations */
 var SLOW_DUR=1.5, STALL_DUR=1.5;       /* oil slow + bomb stall, seconds */
@@ -230,15 +231,15 @@ function generateTrack(seedStr){
   var hd=0,target=0;
   for(var i=0;i<NSEG;i++){
     var zone=zoneOf(i);
-    var maxC=[0.04,0.075,0.11][zone];
+    var maxC=[0.062,0.115,0.168][zone];   /* v7: much windier */
     var lateBoost=i>0.75*NSEG?1.2:1.0;
     if(i<3){target=0;}
     else{
       target+=(rng()*2-1)*maxC*0.7;
       target*=0.93;
       if(zone===2&&(i%7===3)){target=((i%14===3)?1:-1)*maxC*(0.65+rng()*0.35)*lateBoost;} /* chicanes, nastier late */
-      if(hd>1.05)target-=0.025;   /* keep the course from curling into itself */
-      if(hd<-1.05)target+=0.025;
+      if(hd>1.05)target-=0.04;   /* keep the course from curling into itself */
+      if(hd<-1.05)target+=0.04;
       var cap=maxC*lateBoost;
       if(target>cap)target=cap; if(target<-cap)target=-cap;
     }
@@ -274,14 +275,15 @@ function generateTrack(seedStr){
   for(var m=3;m<NSEG;m++){
     var z=zoneOf(m),r=rng();
     var late=m>0.75*NSEG;
-    if(z>=1&&r<(late?0.34:0.16)){oils.push({seg:Math.min(m*SAMPLES,NS-1),lat:(rng()*2-1)*0.55,r:26});}
-    else if(z>=1&&m<=0.7*NSEG&&r<0.26){boosts.push({seg:Math.min(m*SAMPLES,NS-1),lat:(rng()*2-1)*0.5,w:56});}
+    if(z>=1&&r<(late?0.29:0.14)){oils.push({seg:Math.min(m*SAMPLES,NS-1),lat:(rng()*2-1)*0.55,r:26});}
+    else if(z>=1&&m<=0.7*NSEG&&r<0.22){boosts.push({seg:Math.min(m*SAMPLES,NS-1),lat:(rng()*2-1)*0.5,w:56});}
     /* blocker ROWS live in the final stretch: every row spans the full road width except
-       one narrow gap (GAP_CARW car-widths) at a random lateral spot. Min 6-seg row spacing. */
-    if(m>0.75*NSEG&&rng()<0.38&&(m-lastBlockerSeg)>=6){
+       one narrow gap (GAP_CARW car-widths). Gaps stay within the lanes — never on the road edge.
+       Min 6-seg row spacing. */
+    if(m>0.75*NSEG&&rng()<0.32&&(m-lastBlockerSeg)>=6){
       var nl2=lanesOfZone(zoneOf(m)),halfR=nl2*LANE_W/2;
       var gh2=(CAR_HALF_W*2*GAP_CARW)/2;
-      var gmax=halfR-gh2-8;   /* margin absorbs the smoothed width noise so the gap is always fully on-road */
+      var gmax=halfR-gh2-20;   /* v7: wide edge margin — no blockers hugging the sides */
       blockers.push({seg:Math.min(m*SAMPLES,NS-1),gap:(rng()*2-1)*gmax,gh:gh2,row:true});
       lastBlockerSeg=m;
     }
@@ -292,7 +294,7 @@ function generateTrack(seedStr){
   var TCOLORS=['#ef4444','#f59e0b','#a855f7','#22c55e','#eab308','#f472b6'];
   for(var tm=8;tm<NSEG-2;tm++){
     var tz=zoneOf(tm);
-    var dens=[0.30,0.48,0.65][tz];
+    var dens=[0.26,0.41,0.55][tz];   /* v7: ~15% less traffic */
     if(rng()<dens&&(tm-lastTrafficSeg)>=6){
       var bclear=true;
       for(var bq=0;bq<blockers.length;bq++){if(Math.abs(blockers[bq].seg-tm*SAMPLES)<4*SAMPLES){bclear=false;break;}}
@@ -415,7 +417,7 @@ function stepCar(tr,car,inp,dt,t){
   /* the 5% cut lands the moment the spin ends */
   if(!car.slowCut&&t>=car.spinUntil&&t<car.slowUntil){car.speed*=0.95;car.slowCut=true;}
   var speedFrac=Math.min(car.speed/MAXV,1);
-  var turnAuth=TURNSPD*(1.2-0.7*speedFrac);   /* nimble when slow, stable at speed */
+  var turnAuth=TURNSPD*(1.25-0.6*speedFrac);   /* v7: stays nimble at speed — fluid feel */
   car.hd+=car.steerSm*turnAuth*dt;
   car.x+=Math.sin(car.hd)*car.speed*dt;
   car.y-=Math.cos(car.hd)*car.speed*dt;
@@ -1077,7 +1079,7 @@ function drawCarScreen(){
   var shw=8+8*airH;
   ctx.fillRect(-shw+2,-11+4*airH,shw*2,22+8*airH);
   var sc=1+0.45*airH;
-  ctx.scale(sc,sc);
+  ctx.scale(sc*CAR_DRAW_S,sc*CAR_DRAW_S);
   ctx.rotate(spinA);
   if(carSprite)ctx.drawImage(carSprite,-8,-12);
   /* pixel boost flame */
@@ -1268,7 +1270,7 @@ function render(){
       var bs=spans[sp];
       if(bs.len<8||!inR(bs.x,bs.y))continue;
       ctx.save();ctx.translate(bs.x,bs.y);ctx.rotate(bs.hd);
-      var L=bs.len,W=22;
+      var L=bs.len,W=26;   /* v7: chunkier barriers */
       ctx.fillStyle='rgba(0,0,0,0.35)';ctx.fillRect(-L/2+2,-W/2+3,L,W);
       ctx.fillStyle='#f5b301';ctx.fillRect(-L/2,-W/2,L,W);
       ctx.fillStyle='#151a24';
@@ -1294,6 +1296,7 @@ function render(){
     var spr=trafficSprites[tc.color];
     if(!spr)continue;
     ctx.save();ctx.translate(tq.x,tq.y);ctx.rotate(tq.hd);
+    ctx.scale(TRAFFIC_DRAW_S,TRAFFIC_DRAW_S);   /* v7: bigger traffic cars */
     ctx.fillStyle='rgba(0,0,0,0.30)';ctx.fillRect(-8+2,-12+3,16,24);
     ctx.drawImage(spr,-8,-12);
     ctx.restore();
