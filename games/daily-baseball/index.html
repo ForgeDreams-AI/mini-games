@@ -767,7 +767,7 @@ function confirmExit(){ if(confirm('Quit this game and go home?')) location.href
 /* ----- pitching: pick pitch (chips over the field) ----- */
 function phasePitchSelect(){
   stopMeter(); resetFieldFx(); V.phase='pitchSelect'; hideOverlays();
-  el('chipwrap').style.display='';
+  el('chipwrap').style.display='block';
   setHint('Choose your pitch');
   var box=el('pitchchips'); box.innerHTML='';
   var spd=BB.meterSpeed(S.pitchCount,S.sameStreak);
@@ -793,8 +793,8 @@ function phaseTarget(){
 function phaseMeter(kind){
   V.phase='meter';
   hideOverlays(); setHint('');
-  el('meterwrap').style.display='';
-  if(kind==='bat')el('swingbtn').style.display='';
+  el('meterwrap').style.display='block';
+  if(kind==='bat')el('swingbtn').style.display='block';
   var streak = kind==='pitch' ? ((V.selPitch===S.lastPitch)?S.sameStreak+1:S.sameStreak) : 0;
   var pName = kind==='pitch' ? S.daily.pitches[V.selPitch].name : V.batPitch.name;
   var P=BB.meterParams(kind,S,pName,streak);
