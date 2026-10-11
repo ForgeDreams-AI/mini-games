@@ -45,12 +45,16 @@ html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; background: 
 /* power meter */
 #meterWrap { margin: 2px 0 10px; }
 #meter { position: relative; height: 46px; border-radius: 14px; overflow: hidden;
-  background: linear-gradient(90deg, #86efac 0%, #fef08a 46%, #ffffff 50%, #fecaca 54%, #f87171 100%);
+  background: linear-gradient(90deg, #86efac 0%, #fef08a 43%, #ffffff 87%, #fecaca 89.5%, #f87171 100%);
   border: 2px solid #d1d5db; }
+/* one tick per aim dot: dot k = meter 0.1k, i.e. left = k/11.5 of the width */
+#mTicks { position: absolute; inset: 0; pointer-events: none;
+  background: repeating-linear-gradient(90deg, transparent 0, transparent calc(8.6957% - 2px),
+    rgba(17,24,39,.45) calc(8.6957% - 2px), rgba(17,24,39,.45) 8.6957%); }
 #mEase, #mMid, #mOver { position: absolute; top: 50%; transform: translateY(-50%);
   font-size: 11px; font-weight: 900; letter-spacing: 1px; color: #374151; }
 #mEase { left: 8px; } #mOver { right: 8px; color: #7f1d1d; }
-#mMid { left: 50%; transform: translate(-50%,-50%); background: #20242e; color: #fff;
+#mMid { left: 87%; transform: translate(-50%,-50%); background: #20242e; color: #fff;
   border-radius: 8px; padding: 2px 8px; }
 #mPin { position: absolute; top: -2px; width: 4px; height: 50px; background: #b45309;
   box-shadow: 0 0 6px rgba(180,83,9,.8); }

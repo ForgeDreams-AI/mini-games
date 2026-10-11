@@ -19,9 +19,11 @@ var FRICTION=2.3;        /* kinetic decel opposing motion            */
 var SLOPE_G=32.0;        /* accel = SLOPE_G * slope (rise/run)       */
 var CUP_R=0.42;          /* cup capture radius (generous for feel)   */
 var BALL_R=0.30;         /* visual ball radius                       */
-var V_CAP=2.6;           /* max speed at cup for a clean drop        */
+var V_CAP=4.0;           /* max speed at cup for a clean drop        */
 var V_STOP=0.12;         /* below this the ball is at rest           */
 var DMAX=80;             /* putt distance at full (100) power        */
+var DOT_N=10;            /* Wii-style aim dots: 10 dots = full meter */
+var DOT_FT=DMAX/DOT_N;   /* world feet between dots (8); 1 dot = 0.1 of meter */
 var DT=1/240;
 
 /* ================= green archetypes =================
@@ -81,15 +83,29 @@ function buildGreen(rng,archId){
   var R=A.R[0]+rng()*(A.R[1]-A.R[0]);
   var waist=(archId==='pinch')?0.34:0;
   var poly=blobPoly(rng,0,0,R,waist);
-  var cup=randInside(rng,poly,0,0,R);
-  var ball=null;
+  /* place ball+cup as a pair so both are always on the green:
+     symmetric about a jittered center at the wanted distance apart */
   var wantD=A.dMin+rng()*(A.dMax-A.dMin);
-  for(var k=0;k<300&&!ball;k++){
-    var a=rng()*Math.PI*2;
-    var x=cup.x+Math.cos(a)*wantD, y=cup.y+Math.sin(a)*wantD;
-    if(inPoly(x,y,poly)&&dist2(x,y,cup.x,cup.y)>A.dMin*0.8)ball={x:x,y:y};
+  var ball=null,cup=null,k2,a2,dx2,dy2,bx2,by2,cx3,cy3;
+  for(var k=0;k<400&&!ball;k++){
+    var a=rng()*Math.PI*2, dx=Math.cos(a), dy=Math.sin(a);
+    var jx=(rng()-0.5)*R*0.5, jy=(rng()-0.5)*R*0.5;
+    bx2=jx+dx*wantD/2; by2=jy+dy*wantD/2;
+    cx3=jx-dx*wantD/2; cy3=jy-dy*wantD/2;
+    if(inPoly(bx2,by2,poly)&&inPoly(cx3,cy3,poly)){ball={x:bx2,y:by2};cup={x:cx3,y:cy3};}
   }
-  if(!ball)ball={x:cup.x,y:cup.y+wantD};
+  if(!ball){ /* green too small for wantD: shrink until a pair fits */
+    var wd=wantD;
+    while(wd>A.dMin*0.5&&!ball){
+      wd*=0.9;
+      for(k2=0;k2<200&&!ball;k2++){
+        a2=rng()*Math.PI*2; dx2=Math.cos(a2); dy2=Math.sin(a2);
+        bx2=dx2*wd/2; by2=dy2*wd/2; cx3=-dx2*wd/2; cy3=-dy2*wd/2;
+        if(inPoly(bx2,by2,poly)&&inPoly(cx3,cy3,poly)){ball={x:bx2,y:by2};cup={x:cx3,y:cy3};}
+      }
+    }
+  }
+  if(!ball){ball={x:-R*0.3,y:0};cup={x:R*0.3,y:0};}
   var d=dist2(ball.x,ball.y,cup.x,cup.y);
   var lineA=Math.atan2(cup.y-ball.y,cup.x-ball.x);
 
@@ -99,11 +115,11 @@ function buildGreen(rng,archId){
     s=0.008+rng()*0.006;
     h=(function(s,tA){return function(x,y){return s*(x*Math.cos(tA)+y*Math.sin(tA));};})(s,tA);
   }else if(archId==='steep'){
-    s=0.038+rng()*0.014;
+    s=0.028+rng()*0.012;
     tA=lineA+Math.PI/2+(rng()-0.5)*0.9;
     h=(function(s,tA){return function(x,y){return s*(x*Math.cos(tA)+y*Math.sin(tA));};})(s,tA);
   }else if(archId==='tier'){
-    s=0.45+rng()*0.25; var w=5+rng()*3;
+    s=0.10+rng()*0.08; var w=5+rng()*3;
     var lx=ball.x+(cup.x-ball.x)*0.45, ly=ball.y+(cup.y-ball.y)*0.45;
     var nx=-(cup.y-ball.y)/d, ny=(cup.x-ball.x)/d;
     h=(function(s,w,lx,ly,nx,ny){return function(x,y){
@@ -124,7 +140,7 @@ function buildGreen(rng,archId){
       var r=Math.sqrt(x*x+y*y)/R; return s*r*r;
     };})(s,R);
   }else if(archId==='sbreak'){
-    s=0.07+rng()*0.03;
+    s=0.022+rng()*0.014;
     var W=R*1.6, rot=rng()*Math.PI;
     var ca=Math.cos(rot),sa=Math.sin(rot);
     h=(function(s,W,ca,sa){return function(x,y){
@@ -132,7 +148,7 @@ function buildGreen(rng,archId){
       return s*v*Math.sin(Math.PI*u/W);
     };})(s,W,ca,sa);
   }else if(archId==='pinch'){
-    s=0.02+rng()*0.012;
+    s=0.012+rng()*0.008;
     tA=lineA+(rng()-0.5)*0.8;
     var bmx=(ball.x+cup.x)/2, bmy=(ball.y+cup.y)/2;
     var px2=-(cup.y-ball.y)/d, py2=(cup.x-ball.x)/d;
@@ -143,10 +159,10 @@ function buildGreen(rng,archId){
     ];
     h=(function(s,tA){return function(x,y){return s*(x*Math.cos(tA)+y*Math.sin(tA));};})(s,tA);
   }else if(archId==='lag'){
-    s=0.016+rng()*0.01;
+    s=0.008+rng()*0.006;
     h=(function(s,tA){return function(x,y){return s*(x*Math.cos(tA)+y*Math.sin(tA));};})(s,tA);
   }else{ /* tiny */
-    s=0.024+rng()*0.012;
+    s=0.014+rng()*0.010;
     h=(function(s,tA){return function(x,y){return s*(x*Math.cos(tA)+y*Math.sin(tA));};})(s,tA);
   }
   var xs=poly.map(function(p){return p.x;}),ys=poly.map(function(p){return p.y;});
@@ -172,8 +188,8 @@ function genGreens(seedStr){
 function simulate(green,aimA,powerM,opts){
   opts=opts||{};
   var pureBonus=(opts.pure===true);
-  var vCap=pureBonus?V_CAP*1.35:V_CAP;
-  var cupR=pureBonus?CUP_R*1.12:CUP_R;
+  var vCap=pureBonus?V_CAP*1.5:V_CAP;
+  var cupR=pureBonus?CUP_R*1.15:CUP_R;
   var v0=Math.sqrt(2*FRICTION*DMAX*clamp(powerM,0,1.15));
   var x=green.ball.x,y=green.ball.y;
   var vx=Math.cos(aimA)*v0,vy=Math.sin(aimA)*v0;
@@ -215,7 +231,7 @@ function simulate(green,aimA,powerM,opts){
       vx=(vx-1.6*dot*nx3)*0.62+(-ny3)*jit;
       vy=(vy-1.6*dot*ny3)*0.62+(nx3)*jit;
       x=green.cup.x+nx3*(cupR+0.05);y=green.cup.y+ny3*(cupR+0.05);
-    }else if(dc<cupR*1.7&&spd<vCap*0.45){
+    }else if(dc<cupR*2.2&&spd<vCap*0.55){
       return{holed:true,x:green.cup.x,y:green.cup.y,trail:trail,maxBreak:maxBreak,lipped:lipped,offGreen:false,plugged:false};
     }
   }
@@ -226,8 +242,8 @@ function simulate(green,aimA,powerM,opts){
 function gradeStroke(m,pinM){
   var r=m/pinM;
   if(r<0.85)return'EASED';
-  if(r<0.97)return'SOLID';
-  if(r<=1.05)return'PURE';
+  if(r<0.95)return'SOLID';
+  if(r<=1.12)return'PURE';
   return'OVERHIT';
 }
 
@@ -242,15 +258,20 @@ function resize(){
 }
 window.addEventListener('resize',resize);resize();
 
-/* camera: fit green bbox into the area above the bottom panel */
+/* camera: always frame BOTH the ball and the cup -- the player must
+   never wonder where the hole is. Fits the ball+cup box with padding,
+   keeping at least ~1/3 of the green's extent for context. */
 var PANEL_H=170,TOP_H=110;
 var cam={scale:1,ox:0,oy:0,panX:0,panY:0};
 function fitCam(green){
-  var bb=green.bbox;
-  var bw=bb.x1-bb.x0,bh=bb.y1-bb.y0;
+  var bb=green.bbox,pad=13;
+  var x0=Math.min(green.ball.x,green.cup.x)-pad, x1=Math.max(green.ball.x,green.cup.x)+pad;
+  var y0=Math.min(green.ball.y,green.cup.y)-pad, y1=Math.max(green.ball.y,green.cup.y)+pad;
+  var hx=Math.max((x1-x0)/2,(bb.x1-bb.x0)*0.32);
+  var hy=Math.max((y1-y0)/2,(bb.y1-bb.y0)*0.32);
   var aw=cw-56, ah=ch-PANEL_H-TOP_H-40;
-  cam.scale=Math.min(aw/Math.max(bw,1),ah/Math.max(bh,1));
-  cam.ox=(bb.x0+bb.x1)/2;cam.oy=(bb.y0+bb.y1)/2;
+  cam.scale=Math.min(aw/(2*hx),ah/(2*hy));
+  cam.ox=(x0+x1)/2;cam.oy=(y0+y1)/2;
   cam.panX=0;cam.panY=0;
 }
 function w2s(x,y){ /* world -> screen */
@@ -269,34 +290,31 @@ function pathOf(poly){
   ctx.closePath();
 }
 
-/* slope arrows: sample grid near the cup, chevrons point downhill */
-function slopeSamples(green){
-  var out=[],step=5.5,rad=15;
-  for(var gx=green.cup.x-rad;gx<=green.cup.x+rad;gx+=step){
-    for(var gy=green.cup.y-rad;gy<=green.cup.y+rad;gy+=step){
-      if(!inPoly(gx,gy,green.poly))continue;
-      if(dist2(gx,gy,green.cup.x,green.cup.y)<1.6)continue;
-      var g=gradOf(green.h,gx,gy);
-      var m=Math.sqrt(g.x*g.x+g.y*g.y);
-      if(m<0.004)continue;
-      out.push({x:gx,y:gy,dx:-g.x/m,dy:-g.y/m,steep:m});
-    }
-  }
-  return out;
+/* Wii-style drift grid: dots at grid intersections slide continuously
+   downhill; drift speed is proportional to steepness. Samples the same
+   numeric gradient the physics uses, so the picture and the ball agree. */
+var nowS=0; /* seconds, updated in the main loop */
+function driftDirOf(h,x,y){
+  var g=gradOf(h,x,y);
+  var m=Math.sqrt(g.x*g.x+g.y*g.y);
+  if(m<0.004)return null;
+  return {x:-g.x/m, y:-g.y/m, steep:m};
 }
-
-function drawChevron(x,y,dx,dy,len,color){
-  var s=w2s(x,y);
-  var ex=s.x+dx*len,ey=s.y+dy*len;
-  var a=Math.atan2(dy,dx);
-  ctx.strokeStyle=color;ctx.lineWidth=Math.max(2.5,cam.scale*0.10);ctx.lineCap='round';
-  for(var k=0;k<2;k++){
-    var bx=s.x+dx*len*0.45*k,by=s.y+dy*len*0.45*k;
-    ctx.beginPath();
-    ctx.moveTo(bx-Math.cos(a-0.5)*len*0.42,by-Math.sin(a-0.5)*len*0.42);
-    ctx.lineTo(bx,by);
-    ctx.lineTo(bx-Math.cos(a+0.5)*len*0.42,by-Math.sin(a+0.5)*len*0.42);
-    ctx.stroke();
+function drawDriftGrid(green){
+  var SP=4.2, bb=green.bbox;
+  ctx.fillStyle='rgba(18,32,56,0.55)';
+  for(var gx=bb.x0+2;gx<=bb.x1-2;gx+=SP){
+    for(var gy=bb.y0+2;gy<=bb.y1-2;gy+=SP){
+      if(!inPoly(gx,gy,green.poly))continue;
+      if(dist2(gx,gy,green.cup.x,green.cup.y)<1.8)continue;
+      var d=driftDirOf(green.h,gx,gy);
+      if(!d)continue;
+      var phase=((gx*12.9898+gy*78.233)%1+1)%1*SP;
+      var off=((nowS*60*d.steep+phase)%SP+SP)%SP-SP/2;
+      var px=gx+d.x*off, py=gy+d.y*off;
+      var s=w2s(px,py);
+      ctx.beginPath();ctx.arc(s.x,s.y,2.1,0,Math.PI*2);ctx.fill();
+    }
   }
 }
 
@@ -340,13 +358,8 @@ function drawGreen(green,state){
     ctx.restore();
   }
 
-  /* slope chevrons + % labels (same gradient the physics uses) */
-  var samples=slopeSamples(green);
-  for(var i=0;i<samples.length;i++){
-    var sm=samples[i];
-    var len=clamp(sm.steep*900,10,34);
-    drawChevron(sm.x,sm.y,sm.dx,sm.dy,len,'rgba(20,35,60,0.72)');
-  }
+  /* Wii-style drift grid (same gradient the physics uses) */
+  drawDriftGrid(green);
   /* % labels near cup */
   var spots=[{x:green.cup.x,y:green.cup.y},
              {x:(green.cup.x+green.ball.x)/2,y:(green.cup.y+green.ball.y)/2}];
@@ -361,42 +374,59 @@ function drawGreen(green,state){
     ctx.fillText(pct+'%',sp.x,sp.y);
   }
 
-  /* capture ring around cup */
+  /* cup: big, dark, impossible to miss -- with a pulsing gold ring */
   var cp=w2s(green.cup.x,green.cup.y);
-  ctx.strokeStyle='rgba(255,255,255,0.55)';ctx.lineWidth=2;ctx.setLineDash([6,5]);
-  ctx.beginPath();ctx.arc(cp.x,cp.y,CUP_R*cam.scale,0,Math.PI*2);ctx.stroke();
-  ctx.setLineDash([]);
-
-  /* cup */
-  var cupRpx=Math.max(7,CUP_R*cam.scale);
+  var cupRpx=Math.max(10,CUP_R*cam.scale*1.35);
+  var pulse=0.5+0.5*Math.sin(nowS*3.4);
+  ctx.strokeStyle='rgba(255,205,60,'+(0.45+0.35*pulse).toFixed(3)+')';
+  ctx.lineWidth=3.5;
+  ctx.beginPath();ctx.arc(cp.x,cp.y,cupRpx+7+5*pulse,0,Math.PI*2);ctx.stroke();
   var cg=ctx.createRadialGradient(cp.x-2,cp.y-2,1,cp.x,cp.y,cupRpx);
-  cg.addColorStop(0,'#3a4356');cg.addColorStop(1,'#10141d');
+  cg.addColorStop(0,'#232b3d');cg.addColorStop(1,'#04060a');
   ctx.fillStyle=cg;ctx.beginPath();ctx.arc(cp.x,cp.y,cupRpx,0,Math.PI*2);ctx.fill();
+  ctx.strokeStyle='rgba(255,255,255,0.85)';ctx.lineWidth=2.5;
+  ctx.beginPath();ctx.arc(cp.x,cp.y,cupRpx,0,Math.PI*2);ctx.stroke();
 
-  /* flagstick */
-  var fh=cupRpx*5.2;
-  ctx.strokeStyle='#8f1d1d';ctx.lineWidth=Math.max(3,cam.scale*0.14);ctx.lineCap='round';
+  /* tall flagstick + red pennant */
+  var fh=cupRpx*6.4;
+  ctx.strokeStyle='#7f1a1a';ctx.lineWidth=Math.max(3.5,cam.scale*0.16);ctx.lineCap='round';
   ctx.beginPath();ctx.moveTo(cp.x,cp.y);ctx.lineTo(cp.x,cp.y-fh);ctx.stroke();
   ctx.fillStyle='#e23b3b';
   ctx.beginPath();ctx.moveTo(cp.x,cp.y-fh);
-  ctx.lineTo(cp.x+cupRpx*2.6,cp.y-fh+cupRpx*0.9);
-  ctx.lineTo(cp.x,cp.y-fh+cupRpx*1.8);ctx.closePath();ctx.fill();
+  ctx.lineTo(cp.x+cupRpx*3.1,cp.y-fh+cupRpx*1.0);
+  ctx.lineTo(cp.x,cp.y-fh+cupRpx*2.0);ctx.closePath();ctx.fill();
 
-  /* aim line */
+  /* edge arrow: if the cup is ever off-screen (panned away), point at it */
+  var mrg=18,vx0=mrg,vx1=cw-mrg,vy0=TOP_H+mrg,vy1=ch-PANEL_H-mrg;
+  if(cp.x<vx0||cp.x>vx1||cp.y<vy0||cp.y>vy1){
+    var ang=Math.atan2(cp.y-ch/2,cp.x-cw/2);
+    var exx=clamp(cp.x,vx0+16,vx1-16),eyy=clamp(cp.y,vy0+16,vy1-16);
+    ctx.save();ctx.translate(exx,eyy);ctx.rotate(ang);
+    ctx.fillStyle='#ffd23c';ctx.strokeStyle='rgba(0,0,0,0.35)';ctx.lineWidth=2;
+    ctx.beginPath();ctx.moveTo(22,0);ctx.lineTo(-8,-13);ctx.lineTo(-2,0);ctx.lineTo(-8,13);
+    ctx.closePath();ctx.fill();ctx.stroke();ctx.restore();
+  }
+
+  /* Wii dot aim line: evenly spaced dots, 1 dot = 0.1 of the power meter */
   if(state.phase==='aim'&&state.aimA!=null){
     var bs0=w2s(state.ballX,state.ballY);
-    var al=20; /* feet of line */
-    var bs1=w2s(state.ballX+Math.cos(state.aimA)*al,state.ballY+Math.sin(state.aimA)*al);
-    ctx.strokeStyle='#e23b3b';ctx.lineWidth=4;ctx.lineCap='round';
-    ctx.setLineDash([10,7]);
-    ctx.beginPath();ctx.moveTo(bs0.x,bs0.y);ctx.lineTo(bs1.x,bs1.y);ctx.stroke();
-    ctx.setLineDash([]);
-    var aa=Math.atan2(bs1.y-bs0.y,bs1.x-bs0.x);
-    ctx.fillStyle='#e23b3b';
-    ctx.beginPath();ctx.moveTo(bs1.x,bs1.y);
-    ctx.lineTo(bs1.x-Math.cos(aa-0.45)*12,bs1.y-Math.sin(aa-0.45)*12);
-    ctx.lineTo(bs1.x-Math.cos(aa+0.45)*12,bs1.y-Math.sin(aa+0.45)*12);
-    ctx.closePath();ctx.fill();
+    var bEnd=w2s(state.ballX+Math.cos(state.aimA)*DOT_N*DOT_FT,
+                 state.ballY+Math.sin(state.aimA)*DOT_N*DOT_FT);
+    ctx.strokeStyle='rgba(255,255,255,0.30)';ctx.lineWidth=3;ctx.lineCap='round';
+    ctx.beginPath();ctx.moveTo(bs0.x,bs0.y);ctx.lineTo(bEnd.x,bEnd.y);ctx.stroke();
+    for(var dk=1;dk<=DOT_N;dk++){
+      var dp=w2s(state.ballX+Math.cos(state.aimA)*dk*DOT_FT,
+                 state.ballY+Math.sin(state.aimA)*dk*DOT_FT);
+      var dr=(dk%5===0)?4.6:3.1;
+      ctx.fillStyle='rgba(0,0,0,0.30)';
+      ctx.beginPath();ctx.arc(dp.x+1.5,dp.y+1.5,dr,0,Math.PI*2);ctx.fill();
+      ctx.fillStyle='#ffffff';
+      ctx.beginPath();ctx.arc(dp.x,dp.y,dr,0,Math.PI*2);ctx.fill();
+      if(dk%5===0){
+        ctx.fillStyle='#b91c1c';
+        ctx.beginPath();ctx.arc(dp.x,dp.y,1.8,0,Math.PI*2);ctx.fill();
+      }
+    }
   }
 
   /* ball trail */
@@ -510,7 +540,7 @@ function startHole(){
   G.ballX=g.ball.x;G.ballY=g.ball.y;
   G.trail=[];G.holed=false;G.holeT=0;G.rolling=null;
   G.meterOn=false;
-  phaseHint.textContent='Tap the green to set your line, then lock it in.';
+  phaseHint.textContent='Tap the green to aim. Count the dots to the hole \u2014 each dot is one tick of power.';
   phaseBtn.textContent='Lock the line';
   phaseBtn.classList.remove('hidden');
   meterWrap.classList.add('hidden');
@@ -546,7 +576,8 @@ canvas.addEventListener('pointerup',function(e){
 phaseBtn.addEventListener('click',function(){
   if(G.phase==='aim'){
     G.phase='power';G.meterOn=true;G.meterT=0;G.puttArmed=false;
-    phaseHint.textContent='Tap PUTT, then tap again to stop the needle at the \u2691 pin.';
+    var dots=Math.max(1,Math.round(G.greens[G.hole].dist/DOT_FT));
+    phaseHint.textContent='Tap PUTT, then STOP the needle at tick '+dots+' \u2014 count the dots to the hole.';
     phaseBtn.textContent='PUTT';
     meterWrap.classList.remove('hidden');
     mPin.style.left=(clamp(G.greens[G.hole].pinM,0,1.12)/1.15*100)+'%';
@@ -614,11 +645,12 @@ var lastT=0;
 function loop(t){
   requestAnimationFrame(loop);
   var dt=Math.min(0.05,(t-lastT)/1000||0.016);lastT=t;
+  nowS=t/1000;
   if(G.greens.length&&G.hole<9){
     var g=G.greens[G.hole];
     if(G.phase==='power'&&G.meterOn){
       G.meterT+=dt;
-      var cyc=(G.meterT/2.2)%2;
+      var cyc=(G.meterT/3.4)%2;
       G.meterM=1.15*(1-Math.abs(cyc-1));
       mNeedle.style.left=(G.meterM/1.15*100)+'%';
     }
@@ -823,6 +855,8 @@ requestAnimationFrame(loop);
 /* test hooks (node) */
 var PuttTest={hashStr:hashStr,mulberry32:mulberry32,genGreens:genGreens,simulate:simulate,
   gradeStroke:gradeStroke,gradOf:gradOf,inPoly:inPoly,ARCHES:ARCHES,
+  fitCam:fitCam,w2s:w2s,cam:cam,driftDirOf:driftDirOf,DOT_FT:DOT_FT,DOT_N:DOT_N,
+  PANEL_H:PANEL_H,TOP_H:TOP_H,
   consts:{FRICTION:FRICTION,SLOPE_G:SLOPE_G,CUP_R:CUP_R,V_CAP:V_CAP,DMAX:DMAX}};
 if(typeof module!=='undefined'&&module.exports)module.exports=PuttTest;
 
