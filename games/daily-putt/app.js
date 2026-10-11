@@ -424,17 +424,18 @@ function drawGreen(green,state){
   /* mowing stripes clipped to green */
   ctx.clip();
   var s0=w2s(green.bbox.x0-4,green.bbox.y0-4),s1=w2s(green.bbox.x1+4,green.bbox.y1+4);
-  var stripeH=Math.max(14,cam.scale*2.2),yy=s1.y,flip=false;
-  while(yy<s0.y+stripeH){
+  var wpx=Math.abs(s1.x-s0.x),hpx=Math.abs(s1.y-s0.y);
+  var stripeH=Math.max(14,cam.scale*2.2),yy=s0.y,flip=false;
+  while(yy<s1.y){
     ctx.fillStyle=flip?'#55a04a':'#5cab52';
-    ctx.fillRect(s1.x-4,yy,(s0.x-s1.x)+8,stripeH);
+    ctx.fillRect(s0.x-4,yy,wpx+8,stripeH);
     yy+=stripeH;flip=!flip;
   }
-  /* inner shading toward edges */
+  /* inner shading toward edges (radii must be >= 0 -- negative throws) */
   var cc=w2s((green.bbox.x0+green.bbox.x1)/2,(green.bbox.y0+green.bbox.y1)/2);
-  var rg=ctx.createRadialGradient(cc.x,cc.y,Math.min(s0.x-s1.x,s0.y-s1.y)*0.28,cc.x,cc.y,Math.max(s0.x-s1.x,s0.y-s1.y)*0.62);
+  var rg=ctx.createRadialGradient(cc.x,cc.y,Math.min(wpx,hpx)*0.28,cc.x,cc.y,Math.max(wpx,hpx)*0.62);
   rg.addColorStop(0,'rgba(0,0,0,0)');rg.addColorStop(1,'rgba(20,60,25,0.35)');
-  ctx.fillStyle=rg;ctx.fillRect(s1.x-4,s1.y-4,(s0.x-s1.x)+8,(s0.y-s1.y)+8);
+  ctx.fillStyle=rg;ctx.fillRect(s0.x-4,s0.y-4,wpx+8,hpx+8);
   ctx.restore();
   /* fringe outline */
   pathOf(green.poly);
@@ -522,10 +523,10 @@ function drawGreen(green,state){
     ctx.globalAlpha=1;
   }
 
-  /* green name + distance */
+  /* green name + distance (bottom-left of the green view, clear of the HUD strip) */
   ctx.fillStyle='rgba(255,255,255,0.92)';
   ctx.font='800 13px -apple-system,sans-serif';ctx.textAlign='left';
-  ctx.fillText(green.name.toUpperCase()+'  •  '+Math.round(green.dist)+' FT',14,TOP_H+4);
+  ctx.fillText(green.name.toUpperCase()+'  •  '+Math.round(green.dist)+' FT',14,ch-PANEL_H-24);
 }
 
 /* ================= game state / flow ================= */
