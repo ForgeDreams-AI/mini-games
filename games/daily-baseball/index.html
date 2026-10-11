@@ -42,55 +42,36 @@
   #diamondwrap { display:flex; justify-content:center; margin:4px 0 8px; }
   #countline { text-align:center; font-weight:700; font-size:15px; margin:6px 0; min-height:22px; }
   #batterline { text-align:center; font-size:15px; color:#6b6f7a; margin-bottom:8px; min-height:20px; }
-  /* big-head cartoon art */
-  .heroart { width:100%; border-radius:16px; display:block; margin:2px 0 12px;
-             box-shadow:0 2px 10px rgba(0,0,0,.06); }
-  #scenewrap { margin:0 0 6px; }
-  #crowdstrip { width:100%; height:34px; object-fit:cover; display:block;
-                border-radius:12px 12px 0 0; }
-  #scenestage { background:#fff; border-radius:0 0 14px 14px; text-align:center;
-                box-shadow:0 2px 10px rgba(0,0,0,.06); padding:0 0 6px; }
-  #scenechar { height:126px; margin-top:-12px; }
-  #donechar { height:148px; display:block; margin:0 auto 4px; }
-  @keyframes charbounce { 0%,100%{transform:translateY(0)} 30%{transform:translateY(-16px)}
-                           60%{transform:translateY(0)} 80%{transform:translateY(-8px)} }
-  @keyframes charshake { 0%,100%{transform:translateX(0)} 20%{transform:translateX(-10px)}
-                         40%{transform:translateX(10px)} 60%{transform:translateX(-6px)} 80%{transform:translateX(6px)} }
-  .react-bounce { animation:charbounce .7s ease; }
-  .react-shake { animation:charshake .5s ease; }
-  .pitchbtn { display:flex; justify-content:space-between; align-items:center; width:100%;
-              border:2px solid #e9e4d8; background:#fff; border-radius:14px; padding:14px 16px;
-              margin:8px 0; font-size:17px; font-weight:700; cursor:pointer; }
-  .pitchbtn small { color:#6b6f7a; font-weight:600; }
-  .pitchbtn:active { transform:scale(.98); border-color:#20242e; }
-  #targetgrid { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; max-width:300px; margin:10px auto; }
-  .tcell { aspect-ratio:1; border-radius:12px; border:2px solid #e9e4d8; background:#fff;
-           font-size:13px; font-weight:700; color:#6b6f7a; cursor:pointer; }
-  .tcell.corner { border-color:#c62f2f; color:#c62f2f; }
-  .tcell:active { transform:scale(.95); background:#20242e; color:#fff; border-color:#20242e; }
-  #meterwrap { margin:14px 0; }
-  #meter { position:relative; height:54px; background:#e9e4d8; border-radius:14px; overflow:hidden; }
-  #meter .perfect { position:absolute; top:0; bottom:0; background:#1f7a4c; opacity:.85; }
-  #meter .needle { position:absolute; top:-2px; bottom:-2px; width:6px; background:#20242e; border-radius:3px; }
-  #meterbtn { margin-top:10px; }
-  /* pitch-flight camera animation */
-  #pitchview { position:relative; border-radius:14px; overflow:hidden; background:#20242e; cursor:pointer; }
-  #pitchcam { position:relative; transform-origin:72% 62%; will-change:transform; }
-  #pitchscene { width:100%; display:block; }
-  #pitchball { position:absolute; left:0; top:0; width:20px; height:20px; margin:-10px 0 0 -10px;
-               display:none; z-index:3; will-change:left,top,transform; }
-  #pitchmitt { position:absolute; left:72%; top:62%; transform:translate(-50%,-50%);
-               font-size:38px; z-index:2; display:none; }
-  #pitchcall { position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
-               font-size:42px; font-weight:800; color:#fff; text-shadow:0 2px 14px rgba(0,0,0,.55);
-               opacity:0; pointer-events:none; z-index:4; }
-  @keyframes mittpop { 0%{transform:translate(-50%,-50%) scale(1)}
-                       40%{transform:translate(-50%,-50%) scale(1.35) rotate(-10deg)}
-                       100%{transform:translate(-50%,-50%) scale(1)} }
-  .mitt-pop { animation:mittpop .32s ease; }
+  /* ======== FIELD VIEW ======== */
+  #stagewrap { position:relative; border-radius:16px; overflow:hidden; margin:4px 0 8px;
+               box-shadow:0 2px 10px rgba(0,0,0,.10); background:#43a047; }
+  #field { display:block; width:100%; aspect-ratio:960/600; touch-action:manipulation; }
+  #phasehint { position:absolute; top:8px; left:0; right:0; text-align:center; font-weight:800;
+               font-size:14px; color:#fff; text-shadow:0 1px 8px rgba(0,0,0,.7); pointer-events:none; }
+  #callout { position:absolute; left:0; right:0; top:36%; text-align:center; font-size:46px; font-weight:800;
+             color:#fff; text-shadow:0 2px 16px rgba(0,0,0,.6); opacity:0; pointer-events:none; }
+  #callout.show { opacity:1; animation:callpop .35s ease; }
   @keyframes callpop { 0%{opacity:0; transform:scale(.6)} 35%{opacity:1; transform:scale(1.12)}
                        100%{opacity:1; transform:scale(1)} }
-  .call-pop { animation:callpop .35s ease forwards; }
+  #chipwrap { position:absolute; left:8px; right:8px; bottom:8px; background:rgba(255,255,255,.95);
+              border-radius:14px; padding:10px 10px 8px; display:none; }
+  #chiphead { font-size:13px; color:#6b6f7a; margin:0 2px 6px; }
+  #pitchchips { display:flex; gap:8px; }
+  .chip { flex:1; border:2px solid #e9e4d8; background:#fff; border-radius:12px; padding:10px 4px;
+          cursor:pointer; display:flex; flex-direction:column; gap:2px; align-items:center; }
+  .chip b { font-size:15px; } .chip small { color:#6b6f7a; font-size:11px; font-weight:600; }
+  .chip:active { transform:scale(.96); border-color:#20242e; }
+  #meterwrap { position:absolute; left:8px; right:8px; bottom:8px; background:rgba(255,255,255,.95);
+               border-radius:14px; padding:10px; display:none; }
+  #meter { position:relative; height:42px; background:#e9e4d8; border-radius:12px; overflow:hidden; }
+  #meter .perfect { position:absolute; top:0; bottom:0; background:#1f7a4c; opacity:.85; }
+  #meter .needle { position:absolute; top:-2px; bottom:-2px; width:6px; background:#20242e; border-radius:3px; }
+  #meterbtn { margin:8px 0 0; padding:12px; font-size:16px; }
+  #swingbtn { position:absolute; left:50%; transform:translateX(-50%); bottom:118px; display:none;
+              border:none; border-radius:999px; padding:16px 46px; font-size:20px; font-weight:800;
+              background:#c62f2f; color:#fff; box-shadow:0 4px 16px rgba(0,0,0,.35); cursor:pointer; }
+  #swingbtn:active { transform:translateX(-50%) scale(.94); }
+
   #gamelog { min-height:66px; font-size:14px; color:#3a3e48; }
   #gamelog div { padding:3px 0; border-bottom:1px dashed #e9e4d8; }
   .bigresult { text-align:center; font-size:44px; font-weight:800; margin:8px 0; }
@@ -137,8 +118,8 @@
     </div>
     <div class="card">
       <p class="note" style="text-align:left"><b>How it plays</b><br>
-      • Top of each inning: YOU pitch to 3 CPU batters — pick a pitch, pick a spot, stop the meter in the green. Heat is fast, breaking stuff has a tiny zone — and it gets meaner with 2 strikes or runners on.<br>
-      • Bottom: YOU bat 3 times — tap when the needle hits green.<br>
+      • Top of each inning: YOU pitch to 3 CPU batters — pick a pitch, tap your spot right on the field, stop the meter in the green. Heat is fast, breaking stuff has a tiny zone — and it gets meaner with 2 strikes or runners on.<br>
+      • Bottom: YOU bat 3 times — watch the field, tap SWING in the green.<br>
       • Win = more runs than the CPU. Ties count as a loss.<br>
       • One shot at the daily per day. Resets at midnight.</p>
     </div>
@@ -156,50 +137,27 @@
       <div class="inning" id="inning-label">1 ▲</div>
       <div class="team"><div class="n">CPU</div><div class="r" id="score-cpu">0</div></div>
     </div>
-    <div id="scenewrap">
-      <img id="crowdstrip" src="img/crowd.png" alt="" loading="lazy">
-      <div id="scenestage"><img id="scenechar" src="img/pitcher.png" alt="Big-head ballplayer"></div>
-    </div>
-    <div id="diamondwrap">
-      <svg width="120" height="120" viewBox="0 0 120 120">
-        <polygon points="60,14 106,60 60,106 14,60" fill="#e9e4d8"/>
-        <polygon points="60,30 90,60 60,90 30,60" fill="#f4f1ea"/>
-        <rect id="base2" x="52" y="26" width="16" height="16" rx="3" transform="rotate(45 60 34)" fill="#fff" stroke="#20242e" stroke-width="2"/>
-        <rect id="base1" x="82" y="52" width="16" height="16" rx="3" transform="rotate(45 90 60)" fill="#fff" stroke="#20242e" stroke-width="2"/>
-        <rect id="base3" x="22" y="52" width="16" height="16" rx="3" transform="rotate(45 30 60)" fill="#fff" stroke="#20242e" stroke-width="2"/>
-        <circle cx="60" cy="60" r="7" fill="#fff" stroke="#20242e" stroke-width="2"/>
-      </svg>
-    </div>
     <div id="countline"></div>
     <div id="batterline"></div>
-    <div class="card" id="phase-pitchselect" style="display:none">
-      <p class="note" style="margin:0 0 6px"><b>Choose your pitch</b> <span id="fatigue-note"></span></p>
-      <div id="pitchbtns"></div>
-    </div>
-    <div class="card" id="phase-target" style="display:none">
-      <p class="note" style="margin:0 0 6px"><b>Pick your spot</b> — corners are nasty <span style="color:#c62f2f">■</span>, middle gets crushed</p>
-      <div id="targetgrid"></div>
-    </div>
-    <div class="card" id="phase-meter" style="display:none">
-      <p class="note" style="margin:0 0 6px" id="meter-label"><b>Stop the needle in the green!</b></p>
-      <div id="meterwrap"><div id="meter">
-        <div class="perfect" id="meter-perfect"></div>
-        <div class="needle" id="meter-needle"></div>
-      </div></div>
-      <button class="btn btn-primary" id="meterbtn">STOP</button>
-    </div>
-    <div class="card" id="phase-pitchanim" style="display:none">
-      <p class="note" style="margin:0 0 6px" id="pitchanim-label"></p>
-      <div id="pitchview">
-        <div id="pitchcam">
-          <img id="pitchscene" src="img/hero.png" alt="Pitcher vs batter">
-          <div id="pitchmitt">🧤</div>
-          <div id="pitchball"><svg viewBox="0 0 20 20" width="20" height="20"><circle cx="10" cy="10" r="9" fill="#fff" stroke="#c62f2f" stroke-width="1.6"/><path d="M5 3 Q8 10 5 17" fill="none" stroke="#c62f2f" stroke-width="1.4"/><path d="M15 3 Q12 10 15 17" fill="none" stroke="#c62f2f" stroke-width="1.4"/></svg></div>
-          <div id="pitchcall"></div>
-        </div>
+    <div id="stagewrap">
+      <canvas id="field" width="960" height="600"></canvas>
+      <div id="phasehint"></div>
+      <div id="callout"></div>
+      <div id="chipwrap">
+        <p id="chiphead"><b>Choose your pitch</b> <span id="fatigue-note"></span></p>
+        <div id="pitchchips"></div>
       </div>
-      <p class="note" style="margin:6px 0 0">tap to skip ⏩</p>
+      <div id="meterwrap">
+        <p class="note" style="margin:0 0 6px" id="meter-label"><b>Stop the needle in the green!</b></p>
+        <div id="meter">
+          <div class="perfect" id="meter-perfect"></div>
+          <div class="needle" id="meter-needle"></div>
+        </div>
+        <button class="btn btn-primary" id="meterbtn">STOP</button>
+      </div>
+      <button id="swingbtn">SWING</button>
     </div>
+
     <div class="card"><div id="gamelog"></div></div>
   </div>
 
@@ -552,7 +510,8 @@ setInterval(function(){ if(el('screen-menu').classList.contains('on')&&dailyLock
   var c=el('daily-countdown'); if(c)c.textContent=fmtCountdown(msToMidnight()); } },1000);
 
 /* ---------- game view state ---------- */
-var S=null, V={phase:null,selPitch:0,selTarget:4,meter:null};
+var S=null, V={phase:null,selPitch:0,selTarget:4,meter:null,batPitch:null,
+  seq:[],ball:null,swing:null,windupT:0,mittT:0,converge:null,react:null,ping:null,finishPitch:null};
 function log(msg){var L=el('gamelog');var d=document.createElement('div');d.innerHTML=msg;
   L.insertBefore(d,L.firstChild);while(L.children.length>4)L.removeChild(L.lastChild);}
 function clearLog(){el('gamelog').innerHTML='';}
@@ -560,56 +519,244 @@ function renderScore(){
   el('score-you').textContent=S.you; el('score-cpu').textContent=S.cpu;
   el('inning-label').textContent=S.inning+(S.half==='top'?' ▲':' ▼');
   el('game-outs').textContent=S.outs+' OUT';
-  var cols=['base1','base2','base3'];
-  for(var i=0;i<3;i++) el(cols[i]).setAttribute('fill',S.bases[i]?'#1f7a4c':'#fff');
   el('countline').textContent = S.half==='top'
     ? ('Count: '+S.count.b+'–'+S.count.s)
     : (S.count.s>0 ? S.count.s+' strike'+(S.count.s>1?'s':'') : 'Your at-bat');
-  renderScene();
+  /* runners + field state are drawn on the canvas straight from S */
 }
-/* big-head art: swap pitcher/batter by half; reactions are CSS-only */
-function renderScene(){
-  var c=el('scenechar'); if(!c||!S)return;
-  if(V&&V.swinging)return; /* swing flipbook owns the image mid-swing */
-  var want=S.half==='top'?'img/pitcher.png':'img/batter.png';
-  if(c.getAttribute('src')!==want)c.src=want;
+
+/* ================= FIELD VIEW (canvas) ================= */
+var FW=960, FH=600;
+var fcv=el('field'), fx=fcv.getContext('2d');
+var FIMG={};
+function fi(name,src){var im=new Image();im.src=src;FIMG[name]=im;return im;}
+function imgOk(im){return !!(im&&im.complete&&im.naturalWidth>0);}
+function tinted(src,color,alpha){
+  var c=document.createElement('canvas');c.width=src.naturalWidth;c.height=src.naturalHeight;
+  var g=c.getContext('2d');g.drawImage(src,0,0);
+  g.globalCompositeOperation='source-atop';g.globalAlpha=(alpha==null?0.62:alpha);
+  g.fillStyle=color;g.fillRect(0,0,c.width,c.height);
+  var im=new Image();im.src=c.toDataURL();return im;
 }
-/* swing flipbook: stance -> mid-swing -> follow-through (contact) or whiff (miss). art only. */
-var SWING_FRAMES=['img/batter.png','img/swing-mid.png','img/swing-follow.png','img/swing-whiff.png'];
-var swingTimer=null;
-function preloadSwing(){SWING_FRAMES.forEach(function(s){var im=new Image();im.src=s;});}
-function stopSwing(){if(swingTimer){clearInterval(swingTimer);clearTimeout(swingTimer);swingTimer=null;}if(V)V.swinging=false;}
-function playSwing(ev){
-  var c=el('scenechar'); if(!c||!V)return;
-  stopSwing();
-  var swung = ev.type!=='strike' || ev.swinging; /* strike-looking: batter never swings */
-  if(!swung) return;
-  var contact = ev.type==='hit' || ev.type==='out'; /* contact outs (fly/ground) end on follow-through */
-  var seq=['img/batter.png','img/swing-mid.png', contact?'img/swing-follow.png':'img/swing-whiff.png'];
-  V.swinging=true;
-  var i=0; c.src=seq[0];
-  swingTimer=setInterval(function(){
-    i++;
-    if(i<seq.length){ c.src=seq[i]; return; }
-    clearInterval(swingTimer);
-    swingTimer=setTimeout(function(){
-      swingTimer=null; if(V)V.swinging=false;
-      renderScene(); /* back to the right image for the current half */
-    },900);
-  },110);
+/* scene geometry, tuned to img/field.jpg (960x600) */
+var L={
+  mound:{x:480,y:300}, release:{x:480,y:252}, plate:{x:480,y:548},
+  batter:{x:404,y:542,h:134}, catcher:{x:480,y:594,h:62},
+  zone:{x:430,y:416,w:100,h:118}, mitt:{x:480,y:494},
+  fielders:[{x:350,y:254},{x:562,y:244},{x:800,y:304},{x:160,y:304},
+            {x:250,y:150},{x:480,y:118},{x:710,y:150}],
+  runnerDot:{1:{x:890,y:270},2:{x:480,y:206},3:{x:70,y:270}},
+  hitSpot:{'1B':{x:800,y:332},'2B':{x:600,y:232},'3B':{x:350,y:200},'HR':{x:480,y:84},
+           'groundout':{x:650,y:362},'flyout':{x:480,y:180},'lineout':{x:620,y:262}}
+};
+var HITCALL={'1B':'SINGLE!','2B':'DOUBLE!','3B':'TRIPLE!','HR':'HOME RUN!'};
+function preloadField(){
+  fi('field','img/field.jpg'); fi('pitcher','img/pitcher.png');
+  fi('batter','img/batter.png'); fi('swingmid','img/swing-mid.png');
+  fi('swingfollow','img/swing-follow.png'); fi('swingwhiff','img/swing-whiff.png');
 }
-function sceneReact(kind){
-  var c=el('scenechar'); if(!c)return;
-  c.classList.remove('react-bounce','react-shake'); void c.offsetWidth;
-  c.classList.add(kind==='bounce'?'react-bounce':'react-shake');
+function fielderImg(){
+  if(FIMG.fielder)return FIMG.fielder;
+  if(!imgOk(FIMG.pitcher))return null;
+  FIMG.fielder=tinted(FIMG.pitcher,'#274b8f',0.6);
+  return FIMG.fielder;
 }
+function drawSprite(im,x,yfeet,h,flip){
+  if(!imgOk(im))return;
+  var w=h*im.naturalWidth/im.naturalHeight;
+  fx.save();fx.translate(x,yfeet);if(flip)fx.scale(-1,1);
+  fx.drawImage(im,-w/2,-h,w,h);fx.restore();
+}
+function rr(x,y,w,h,r){
+  fx.beginPath();
+  fx.moveTo(x+r,y);fx.arcTo(x+w,y,x+w,y+h,r);fx.arcTo(x+w,y+h,x,y+h,r);
+  fx.arcTo(x,y+h,x,y,r);fx.arcTo(x,y,x+w,y,r);fx.closePath();
+}
+function pitchEase(t){return t<0.5?2*t*t:1-Math.pow(-2*t+2,2)/2;}
+/* tiny timeline for sequencing animations */
+function seqClear(){V.seq=[];}
+function seqAfter(ms,fn){V.seq.push({at:performance.now()+ms,fn:fn});}
+function seqPump(now){
+  if(!V.seq.length)return;
+  var due=[];
+  V.seq=V.seq.filter(function(s){if(s.at<=now){due.push(s);return false;}return true;});
+  for(var i=0;i<due.length;i++)due[i].fn();
+}
+function setCallout(t){
+  var c=el('callout');
+  if(!t){c.classList.remove('show');c.textContent='';return;}
+  c.textContent=t;c.classList.remove('show');void c.offsetWidth;c.classList.add('show');
+}
+function hideOverlays(){['chipwrap','meterwrap','swingbtn'].forEach(function(id){el(id).style.display='none';});}
+function setHint(t){el('phasehint').textContent=t||'';}
+function fieldReact(who,kind){V.react={who:who,kind:kind,t0:performance.now(),dur:700};}
+function reactOff(who,now){
+  var r=V.react;
+  if(!r||r.who!==who)return{dx:0,dy:0};
+  var p=(now-r.t0)/r.dur;
+  if(p>=1){if(V.react===r)V.react=null;return{dx:0,dy:0};}
+  if(r.kind==='bounce')return{dx:0,dy:-16*Math.sin(p*Math.PI*2)*(1-p)};
+  return{dx:9*Math.sin(p*Math.PI*4)*(1-p),dy:0};
+}
+function resetFieldFx(){
+  seqClear();V.ball=null;V.converge=null;V.swing=null;
+  V.mittT=0;V.windupT=0;V.react=null;V.ping=null;V.finishPitch=null;
+  setCallout('');setHint('');
+}
+/* ball paths — same PITCH_FLIGHT table as before, mapped into scene coords */
+var PITCH_FLIGHT={
+  'Fastball':{dur:700, arc:8,  drop:6,  cut:0},
+  'Curveball':{dur:1150,arc:62, drop:72, cut:0},
+  'Slider':  {dur:880, arc:14, drop:24, cut:-7},
+  'Changeup':{dur:1300,arc:28, drop:10, cut:0},
+  'Sinker':  {dur:950, arc:10, drop:46, cut:0},
+  'Cutter':  {dur:830, arc:8,  drop:14, cut:-4}
+};
+function pitchPosAt(b,p){
+  var F=b.F,late=Math.max(0,(p-0.55)/0.45);late*=late;
+  return{
+    x:L.release.x+(L.mitt.x-L.release.x)*p+F.cut*late*5,
+    y:L.release.y+(L.mitt.y-L.release.y)*p-F.arc*Math.sin(Math.PI*p)*2.2+F.drop*late*2.2,
+    r:6+5*p
+  };
+}
+function battedPosAt(b,p){
+  return{
+    x:b.from.x+(b.to.x-b.from.x)*p,
+    y:b.from.y+(b.to.y-b.from.y)*p-b.arc*Math.sin(Math.PI*p),
+    r:11-4*p
+  };
+}
+function ballPos(b,p){
+  if(b.kind==='batted')return battedPosAt(b,p);
+  if(b.kind==='tomitt')return{x:b.from.x+(b.to.x-b.from.x)*p,y:b.from.y+(b.to.y-b.from.y)*p,r:9};
+  return pitchPosAt(b,p);
+}
+function drawBall(now){
+  var b=V.ball;if(!b)return;
+  var p=Math.min(1,(now-b.t0)/b.dur);
+  if(p>=1&&b.kind!=='batted')return;
+  var pos=ballPos(b,p);
+  fx.save();
+  for(var k=3;k>=1;k--){
+    var tp=ballPos(b,Math.max(0,p-k*0.04));
+    fx.globalAlpha=0.15;fx.fillStyle='#fff';
+    fx.beginPath();fx.arc(tp.x,tp.y,pos.r*0.75,0,7);fx.fill();
+  }
+  fx.globalAlpha=1;
+  fx.beginPath();fx.arc(pos.x,pos.y,pos.r,0,7);
+  fx.fillStyle='#fff';fx.fill();fx.lineWidth=2;fx.strokeStyle='#c62f2f';fx.stroke();
+  fx.restore();
+}
+function drawField(now){
+  fx.save();
+  fx.clearRect(0,0,FW,FH);
+  var cam=1;
+  if(V.ball&&V.ball.kind==='pitch')cam=1+0.26*pitchEase(Math.min(1,(now-V.ball.t0)/V.ball.dur));
+  fx.translate(L.plate.x,L.plate.y);fx.scale(cam,cam);fx.translate(-L.plate.x,-L.plate.y);
+  if(imgOk(FIMG.field))fx.drawImage(FIMG.field,0,0,FW,FH);
+  else{fx.fillStyle='#43a047';fx.fillRect(-300,-300,FW+600,FH+600);}
+  /* runners on base */
+  for(var i=0;i<3;i++)if(S.bases[i]){
+    var rp=L.runnerDot[i+1];
+    fx.beginPath();fx.arc(rp.x,rp.y,11,0,7);
+    fx.fillStyle='#1f7a4c';fx.fill();fx.lineWidth=3;fx.strokeStyle='#fff';fx.stroke();
+  }
+  /* fielders (converge on batted balls) */
+  var fim=fielderImg()||FIMG.pitcher;
+  for(var fi2=0;fi2<L.fielders.length;fi2++){
+    var f=L.fielders[fi2],ox=0,oy=0;
+    if(V.converge){
+      var cp=Math.min(1,(now-V.converge.t0)/V.converge.dur),e=pitchEase(cp);
+      var dx=V.converge.spot.x-f.x,dy=V.converge.spot.y-f.y,d=Math.hypot(dx,dy)||1;
+      if(d<430){var mv=Math.min(d*0.45,130)*e;ox=dx/d*mv;oy=dy/d*mv;}
+    }
+    var bob=(V.phase==='pitchAnim'||V.phase==='swingAnim')?0:Math.sin(now/520+fi2*1.7)*2;
+    drawSprite(fim,f.x+ox,f.y+oy+bob,54,false);
+  }
+  /* strike zone */
+  if(V.phase==='target'||V.phase==='pitchSelect'){
+    var z=L.zone,hot=V.phase==='target';
+    fx.save();
+    fx.strokeStyle=hot?'#c62f2f':'rgba(255,255,255,.6)';
+    fx.lineWidth=hot?4:2.5;fx.setLineDash([9,7]);
+    rr(z.x,z.y,z.w,z.h,10);fx.stroke();fx.setLineDash([]);
+    if(hot){
+      fx.strokeStyle='rgba(198,47,47,.45)';fx.lineWidth=1.5;
+      for(var c=1;c<3;c++){
+        fx.beginPath();fx.moveTo(z.x+z.w*c/3,z.y);fx.lineTo(z.x+z.w*c/3,z.y+z.h);fx.stroke();
+        fx.beginPath();fx.moveTo(z.x,z.y+z.h*c/3);fx.lineTo(z.x+z.w,z.y+z.h*c/3);fx.stroke();
+      }
+    }
+    fx.restore();
+  }
+  /* pitcher (+windup / react) */
+  var px=L.mound.x,py=L.mound.y;
+  if(V.windupT){var w=Math.min(1,(now-V.windupT)/450);py-=Math.abs(Math.sin(w*Math.PI))*14;}
+  var pro=reactOff('P',now);px+=pro.dx;py+=pro.dy;
+  drawSprite(FIMG.pitcher,px,py,112,false);
+  /* catcher */
+  drawSprite(fim,L.catcher.x,L.catcher.y,L.catcher.h,false);
+  /* mitt pop */
+  if(V.mittT){
+    var ma=(now-V.mittT)/320;
+    if(ma<1){
+      var ms=1+0.45*Math.sin(ma*Math.PI);
+      fx.save();fx.font=Math.round(54*ms)+'px serif';
+      fx.textAlign='center';fx.textBaseline='middle';
+      fx.fillText('🧤',L.mitt.x,L.mitt.y);fx.restore();
+    }else V.mittT=0;
+  }
+  /* batter (+swing flipbook / react) */
+  var bf='batter';
+  if(V.swing){
+    var si=Math.min(V.swing.frames.length-1,Math.floor((now-V.swing.t0)/110));
+    bf=V.swing.frames[si];
+  }
+  var bro=reactOff('B',now);
+  drawSprite(FIMG[bf],L.batter.x+bro.dx,L.batter.y+bro.dy,L.batter.h,false);
+  /* ball + tap ping */
+  drawBall(now);
+  if(V.ping){
+    var pa=(now-V.ping.t0)/450;
+    if(pa<1){
+      fx.save();fx.strokeStyle='#c62f2f';fx.lineWidth=4;fx.globalAlpha=1-pa;
+      fx.beginPath();fx.arc(V.ping.x,V.ping.y,8+34*pa,0,7);fx.stroke();fx.restore();
+    }else V.ping=null;
+  }
+  fx.restore();
+  seqPump(now);
+}
+function fieldTick(){
+  requestAnimationFrame(fieldTick);
+  if(!el('screen-game').classList.contains('on')||!S)return;
+  drawField(performance.now());
+}
+/* canvas taps: pick the zone spot, or skip the pitch sequence */
+fcv.addEventListener('click',function(e){
+  var r=fcv.getBoundingClientRect();
+  var x=(e.clientX-r.left)*FW/r.width,y=(e.clientY-r.top)*FH/r.height;
+  if(V.phase==='target'){
+    var z=L.zone;
+    if(x>=z.x&&x<=z.x+z.w&&y>=z.y&&y<=z.y+z.h){
+      var col=Math.min(2,Math.floor((x-z.x)/(z.w/3)));
+      var row=Math.min(2,Math.floor((y-z.y)/(z.h/3)));
+      V.selTarget=row*3+col;
+      V.ping={x:x,y:y,t0:performance.now()};
+      phaseMeter('pitch');
+    }
+  }else if(V.phase==='pitchAnim'&&V.finishPitch){V.finishPitch();}
+});
+preloadField();
+requestAnimationFrame(fieldTick);
+
 function startGame(mode){
   if(mode==='daily'&&dailyLocked()){refreshMenu();show('screen-menu');return;}
   var date=todayStr();
   var daily = mode==='daily' ? BB.makeDaily(date) : BB.makeDaily('practice|'+Date.now()+Math.random());
   S=BB.newGame(daily,mode); S.date=date;
-  V={phase:null,selPitch:0,selTarget:4,meter:null};
-  stopSwing(); preloadSwing(); stopPitchAnim(); preloadPitch();
+  V.phase=null;V.selPitch=0;V.selTarget=4;V.meter=null;V.batPitch=null;
+  resetFieldFx(); preloadField();
   el('game-mode').textContent=mode==='daily'?'DAILY':'PRACTICE';
   clearLog(); show('screen-game');
   log('Play ball! Top of the 1st — you\'re pitching.');
@@ -617,48 +764,37 @@ function startGame(mode){
 }
 function confirmExit(){ if(confirm('Quit this game and go home?')) location.href='../..'; }
 
-/* ----- pitching: pick pitch ----- */
+/* ----- pitching: pick pitch (chips over the field) ----- */
 function phasePitchSelect(){
-  stopMeter(); V.phase='pitchSelect';
-  ['phase-target','phase-meter','phase-pitchanim'].forEach(function(id){el(id).style.display='none';});
-  var ps=el('phase-pitchselect'); ps.style.display='';
-  var box=el('pitchbtns'); box.innerHTML='';
+  stopMeter(); resetFieldFx(); V.phase='pitchSelect'; hideOverlays();
+  el('chipwrap').style.display='';
+  setHint('Choose your pitch');
+  var box=el('pitchchips'); box.innerHTML='';
   var spd=BB.meterSpeed(S.pitchCount,S.sameStreak);
   el('fatigue-note').textContent = S.pitchCount>0 ? '(meter ×'+spd.toFixed(2)+')' : '';
-  var bat=S.half==='top'?BB.currentBatter(S):null;
-  el('batterline').textContent = bat?('Batter: '+bat.name+' — K rate '+bat.k+'%'):'';
+  var bat=BB.currentBatter(S);
+  el('batterline').textContent='Batter: '+bat.name+' — K rate '+bat.k+'%';
   S.daily.pitches.forEach(function(p,i){
-    var b=document.createElement('button'); b.className='pitchbtn';
+    var b=document.createElement('button'); b.className='chip';
     var pm=BB.PITCH_METER[p.name]||{spd:1,zone:1};
-    var dstars='⚡'.repeat(BB.starsFor(pm.spd/pm.zone));
-    b.innerHTML='<span>'+p.name+'</span><small>'+p.speed+' mph · break '+p.brk+'/10 · '+dstars+(i===S.lastPitch&&S.sameStreak>0?' · ×'+(S.sameStreak+1):'')+'</small>';
+    b.innerHTML='<b>'+p.name+'</b><small>'+p.speed+' mph · '+'⚡'.repeat(BB.starsFor(pm.spd/pm.zone))+'</small>';
     b.onclick=function(){V.selPitch=i;phaseTarget();};
     box.appendChild(b);
   });
   renderScore();
 }
-/* ----- pitching: pick target ----- */
-var TCELL=['↖ corner','↑ edge','↗ corner','← edge','● middle','→ edge','↙ corner','↓ edge','↘ corner'];
+/* ----- pitching: tap your spot in the in-scene strike zone ----- */
 function phaseTarget(){
-  V.phase='target';
-  el('phase-pitchselect').style.display='none'; el('phase-meter').style.display='none';
-  var tg=el('phase-target'); tg.style.display='';
-  var g=el('targetgrid'); g.innerHTML='';
-  for(var i=0;i<9;i++)(function(i){
-    var b=document.createElement('button'); b.className='tcell'+((i===0||i===2||i===6||i===8)?' corner':'');
-    b.textContent=TCELL[i];
-    b.onclick=function(){V.selTarget=i;phaseMeter('pitch');};
-    g.appendChild(b);
-  })(i);
+  V.phase='target'; hideOverlays();
+  setHint('Tap your spot — corners are nasty, middle gets crushed');
+  el('batterline').textContent=S.daily.pitches[V.selPitch].name+' — tap the zone';
 }
-/* ----- timing meter (shared) ----- */
+/* ----- timing meter (shared, slim overlay) ----- */
 function phaseMeter(kind){
   V.phase='meter';
-  el('phase-pitchselect').style.display='none'; el('phase-target').style.display='none';
-  var m=el('phase-meter'); m.style.display='';
-  el('meter-label').innerHTML = kind==='pitch'
-    ? '<b>Stop the needle in the green!</b> ('+S.daily.pitches[V.selPitch].name+')'
-    : '<b>Tap in the green to swing!</b> ('+V.batPitch.name+' coming)';
+  hideOverlays(); setHint('');
+  el('meterwrap').style.display='';
+  if(kind==='bat')el('swingbtn').style.display='';
   var streak = kind==='pitch' ? ((V.selPitch===S.lastPitch)?S.sameStreak+1:S.sameStreak) : 0;
   var pName = kind==='pitch' ? S.daily.pitches[V.selPitch].name : V.batPitch.name;
   var P=BB.meterParams(kind,S,pName,streak);
@@ -685,105 +821,15 @@ function meterAcc(){
   return BB.clamp(1-d/0.5,0,1);
 }
 /* ----- meter tap ----- */
-el('meterbtn').onclick=function(){
+function meterTap(){
   if(V.phase!=='meter'||!V.meter)return;
   var kind=V.meter.kind; /* capture BEFORE meterAcc stops the meter */
   var acc=meterAcc();
   if(kind==='pitch') doPlayerPitch(acc); else doPlayerBat(acc);
-};
-/* pitch-flight camera animation (presentation only — outcome already decided by BB).
-   Ball travels release -> plate with pitch-specific movement; camera pushes in;
-   payoff: mitt catch on strikes/balls, batted-ball launch on hits/outs. */
-var PITCH_FLIGHT={
-  'Fastball':{dur:700, arc:8,  drop:6,  cut:0},
-  'Curveball':{dur:1150,arc:62, drop:72, cut:0},
-  'Slider':  {dur:880, arc:14, drop:24, cut:-7},
-  'Changeup':{dur:1300,arc:28, drop:10, cut:0},
-  'Sinker':  {dur:950, arc:10, drop:46, cut:0},
-  'Cutter':  {dur:830, arc:8,  drop:14, cut:-4}
-};
-var PITCH_FROM={x:27,y:48}, PITCH_TO={x:72,y:62}; /* % of pitch view */
-var pitchRaf=null, pitchSkip=null;
-function preloadPitch(){var im=new Image();im.src='img/hero.png';}
-function stopPitchAnim(){if(pitchRaf){cancelAnimationFrame(pitchRaf);pitchRaf=null;}pitchSkip=null;
-  var c=el('phase-pitchanim');if(c)c.style.display='none';}
-function pitchEase(t){return t<0.5?2*t*t:1-Math.pow(-2*t+2,2)/2;}
-function playBattedBall(ev,endCall,wrapUp){
-  var ball=el('pitchball'),call=el('pitchcall'),traj;
-  if(ev.type==='hit'){
-    traj={'1B':{x:106,y:80,arc:6,dur:520},'2B':{x:110,y:56,arc:10,dur:460},
-          '3B':{x:102,y:20,arc:38,dur:680},'HR':{x:112,y:6,arc:52,dur:780}}[ev.kind];
-  }else{
-    traj={'groundout':{x:106,y:80,arc:6,dur:520},'flyout':{x:100,y:18,arc:40,dur:700},
-          'lineout':{x:110,y:56,arc:10,dur:460}}[ev.how]||{x:106,y:70,arc:10,dur:550};
-  }
-  var sx=PITCH_TO.x,sy=PITCH_TO.y,t0=performance.now();
-  var step=function(now){
-    var t=Math.min(1,(now-t0)/traj.dur);
-    var x=sx+(traj.x-sx)*t, y=sy+(traj.y-sy)*t-traj.arc*Math.sin(Math.PI*t);
-    ball.style.left=x+'%'; ball.style.top=y+'%';
-    ball.style.transform='scale('+(1.3-0.5*t).toFixed(2)+')';
-    ball.style.opacity=1-0.6*t;
-    if(t<1){pitchRaf=requestAnimationFrame(step);return;}
-    pitchRaf=null;
-    call.textContent=endCall;call.classList.remove('call-pop');void call.offsetWidth;call.classList.add('call-pop');
-    setTimeout(wrapUp,700);
-  };
-  pitchRaf=requestAnimationFrame(step);
 }
-function playPitchAnim(ev,done){
-  V.phase='pitchAnim';
-  ['phase-pitchselect','phase-target','phase-meter'].forEach(function(id){el(id).style.display='none';});
-  el('phase-pitchanim').style.display='';
-  var P=S.daily.pitches[V.selPitch];
-  var F=PITCH_FLIGHT[P.name]||PITCH_FLIGHT['Fastball'];
-  el('pitchanim-label').innerHTML='<b>'+esc(P.name)+'</b> · '+P.speed+' mph';
-  var cam=el('pitchcam'),ball=el('pitchball'),mitt=el('pitchmitt'),call=el('pitchcall'),view=el('pitchview');
-  cam.style.transform='';mitt.style.display='none';mitt.classList.remove('mitt-pop');
-  call.className='';call.textContent='';call.style.opacity=0;
-  ball.style.display='block';ball.style.opacity=1;ball.style.transform='scale(0.75)';
-  var endCall,endMitt,batted;
-  if(ev.type==='hit'){endMitt=false;batted=true;
-    endCall={'1B':'SINGLE!','2B':'DOUBLE!','3B':'TRIPLE!','HR':'HOME RUN!'}[ev.kind];}
-  else if(ev.type==='out'){endMitt=false;batted=true;endCall='OUT';}
-  else{batted=false;endMitt=true;
-    endCall=ev.walk?'BALL 4':ev.type==='ball'?'BALL':(ev.struckout?'STRUCK OUT!':'STRIKE!');}
-  var wrapped=false;
-  var wrapUp=function(){
-    if(wrapped)return;wrapped=true;
-    if(pitchRaf){cancelAnimationFrame(pitchRaf);pitchRaf=null;}
-    pitchSkip=null;view.onclick=null;
-    ball.style.opacity=1;
-    el('phase-pitchanim').style.display='none';
-    done();
-  };
-  pitchSkip=function(){ /* tap to skip: jump straight to the call */
-    if(wrapped||!pitchSkip)return;
-    if(pitchRaf){cancelAnimationFrame(pitchRaf);pitchRaf=null;}
-    ball.style.display='none';
-    if(endMitt)mitt.style.display='block';
-    call.textContent=endCall;call.style.opacity=1;
-    setTimeout(wrapUp,250);
-  };
-  view.onclick=function(){if(pitchSkip)pitchSkip();};
-  var t0=performance.now();
-  var step=function(now){
-    var t=Math.min(1,(now-t0)/F.dur);
-    var late=Math.max(0,(t-0.55)/0.45);late=late*late;
-    var x=PITCH_FROM.x+(PITCH_TO.x-PITCH_FROM.x)*t+F.cut*late;
-    var y=PITCH_FROM.y+(PITCH_TO.y-PITCH_FROM.y)*t-F.arc*Math.sin(Math.PI*t)+F.drop*late;
-    ball.style.left=x+'%';ball.style.top=y+'%';
-    ball.style.transform='scale('+(0.75+0.55*t).toFixed(2)+')';
-    cam.style.transform='scale('+(1+0.55*pitchEase(t)).toFixed(3)+')';
-    if(t<1){pitchRaf=requestAnimationFrame(step);return;}
-    pitchRaf=null;
-    if(batted){playBattedBall(ev,endCall,wrapUp);return;}
-    mitt.style.display='block';mitt.classList.remove('mitt-pop');void mitt.offsetWidth;mitt.classList.add('mitt-pop');
-    call.textContent=endCall;call.classList.remove('call-pop');void call.offsetWidth;call.classList.add('call-pop');
-    setTimeout(wrapUp,560);
-  };
-  pitchRaf=requestAnimationFrame(step);
-}
+el('meterbtn').onclick=meterTap;
+el('swingbtn').onclick=meterTap;
+/* ----- pitch sequence on the field (presentation only — outcome already decided by BB) ----- */
 function doPlayerPitch(acc){
   var curBat=BB.currentBatter(S), bn=esc(curBat.name);
   var r=BB.playerPitch(S,Math.random,V.selPitch,V.selTarget,acc);
@@ -795,11 +841,38 @@ function doPlayerPitch(acc){
   else if(ev.type==='strike') msg='✅ Strike '+S.count.s+' — '+P.name+' paints it ('+ev.acc+'%).';
   else if(ev.type==='hit') msg=hitMsg(ev.kind,'CPU');
   else msg='❌ '+cap(ev.how)+' — '+bn+' is out.';
-  playPitchAnim(ev,function(){
+  V.phase='pitchAnim'; hideOverlays(); setHint('');
+  function finishPitch(){
+    resetFieldFx();
     log(msg); renderScore();
-    if(ev.struckout) sceneReact('bounce');
-    else if(ev.type==='hit'&&ev.kind==='HR') sceneReact('shake');
+    if(ev.struckout) fieldReact('P','bounce');
+    else if(ev.type==='hit'&&ev.kind==='HR') fieldReact('B','shake');
     if(r.halfOver){ endHalfUI(); } else phasePitchSelect();
+  }
+  V.finishPitch=finishPitch;
+  V.windupT=performance.now();
+  seqAfter(450,function(){
+    V.windupT=0;
+    var F=PITCH_FLIGHT[P.name]||PITCH_FLIGHT['Fastball'];
+    V.ball={kind:'pitch',t0:performance.now(),dur:F.dur,F:F};
+    seqAfter(F.dur+40,function(){
+      V.ball=null;
+      if(ev.type==='hit'||ev.type==='out'){
+        var key=ev.type==='hit'?ev.kind:ev.how;
+        var spot=L.hitSpot[key]||L.hitSpot['1B'];
+        var dur=(key==='HR')?820:580;
+        V.ball={kind:'batted',t0:performance.now(),dur:dur,
+                from:{x:L.plate.x,y:L.plate.y-60},to:spot,
+                arc:(key==='HR'||key==='flyout'||key==='3B')?70:16};
+        V.converge={t0:performance.now(),dur:dur,spot:spot};
+        setCallout(ev.type==='hit'?HITCALL[ev.kind]:'OUT');
+        seqAfter(dur+700,finishPitch);
+      }else{
+        V.mittT=performance.now();
+        setCallout(ev.walk?'BALL 4':ev.type==='ball'?'BALL':(ev.struckout?'STRUCK OUT!':'STRIKE!'));
+        seqAfter(700,finishPitch);
+      }
+    });
   });
 }
 function cap(s){return s.charAt(0).toUpperCase()+s.slice(1);}
@@ -809,33 +882,77 @@ function hitMsg(kind,who){
   return emoji+' <b>'+label+'</b> ('+who+')';
 }
 function endHalfUI(){
+  resetFieldFx();
   var over=BB.endHalf(S);
   if(over){ finishGame(); return; }
   if(S.half==='bot'){ log('⬇ <b>Bottom of the '+S.inning+' — you\'re up!</b> 3 at-bats.'); startBat(); }
   else { log('⬆ <b>Top of the '+S.inning+' — back on the mound.</b>'); phasePitchSelect(); }
   renderScore();
 }
-/* ----- batting ----- */
+/* ----- batting on the field ----- */
 function startBat(){
-  V.phase='batIntro';
-  ['phase-pitchselect','phase-target','phase-meter','phase-pitchanim'].forEach(function(id){el(id).style.display='none';});
+  resetFieldFx(); V.phase='bat'; hideOverlays();
   V.batPitch=S.daily.pitches[Math.floor(Math.random()*3)];
   el('batterline').textContent='You\'re batting — CPU deals a '+V.batPitch.name+'.';
-  el('countline').textContent='';
   renderScore();
   phaseMeter('bat');
 }
+/* swing flipbook on canvas: stance -> mid-swing -> follow-through (contact) or whiff (miss) */
+function playSwing(ev){
+  stopSwing();
+  var swung = ev.type!=='strike' || ev.swinging; /* strike-looking: batter never swings */
+  if(!swung) return {swung:false,contact:false};
+  var contact = ev.type==='hit' || ev.type==='out';
+  V.swing={frames:['batter','swingmid',contact?'swingfollow':'swingwhiff'],t0:performance.now()};
+  return {swung:true,contact:contact};
+}
+function stopSwing(){V.swing=null;}
+function preloadSwing(){/* swing frames preloaded by preloadField */}
+function stopPitchAnim(){resetFieldFx();}
+function preloadPitch(){/* field art preloaded by preloadField */}
 function doPlayerBat(acc){
   var r=BB.playerBat(S,Math.random,V.batPitch,acc);
   var ev=r.event,msg='';
-  if(ev.type==='strike') msg= S.count.s>=3||ev.strikeout?'🔥 <b>Struck out</b> ('+(ev.swinging?'swinging':'looking')+').':'❎ Swing and a miss — strike '+S.count.s+'.';
+  if(ev.type==='strike') msg= S.count.s>=3?'🔥 <b>Struck out</b> ('+(ev.swinging?'swinging':'looking')+').':'❎ Swing and a miss — strike '+S.count.s+'.';
   else if(ev.type==='hit') msg=hitMsg(ev.kind,'YOU');
   else msg='❌ '+cap(ev.how)+' — you\'re out.';
-  log(msg); renderScore();
-  playSwing(ev); /* flipbook swing animation; art only, outcome already decided */
-  if(ev.type==='hit'&&ev.kind==='HR') sceneReact('bounce');
-  else if(S.count.s>=3||ev.strikeout) sceneReact('shake');
-  if(r.halfOver){ endHalfUI(); } else startBat();
+  V.phase='swingAnim'; hideOverlays(); setHint('');
+  function finishBat(){
+    resetFieldFx();
+    log(msg); renderScore();
+    if(ev.type==='hit'&&ev.kind==='HR') fieldReact('B','bounce');
+    else if(ev.type==='strike'&&S.count.s>=3) fieldReact('B','shake');
+    if(r.halfOver){ endHalfUI(); } else startBat();
+  }
+  var sw=playSwing(ev);
+  if(sw.swung&&sw.contact){
+    seqAfter(230,function(){
+      var key=ev.type==='hit'?ev.kind:ev.how;
+      var spot=L.hitSpot[key]||L.hitSpot['1B'];
+      var dur=(key==='HR')?820:580;
+      V.ball={kind:'batted',t0:performance.now(),dur:dur,
+              from:{x:L.plate.x,y:L.plate.y-60},to:spot,
+              arc:(key==='HR'||key==='flyout'||key==='3B')?70:16};
+      V.converge={t0:performance.now(),dur:dur,spot:spot};
+      setCallout(ev.type==='hit'?HITCALL[ev.kind]:'OUT');
+    });
+    seqAfter(1250,finishBat);
+  }else if(sw.swung){
+    seqAfter(230,function(){
+      V.ball={kind:'tomitt',t0:performance.now(),dur:200,from:{x:L.plate.x,y:L.plate.y-60},to:L.mitt};
+    });
+    seqAfter(480,function(){V.ball=null;V.mittT=performance.now();setCallout('SWING AND A MISS');});
+    seqAfter(1200,finishBat);
+  }else{
+    /* looking: pitch comes in and is caught */
+    var F=PITCH_FLIGHT[V.batPitch.name]||PITCH_FLIGHT['Fastball'];
+    V.ball={kind:'pitch',t0:performance.now(),dur:F.dur,F:F};
+    seqAfter(F.dur+40,function(){
+      V.ball=null;V.mittT=performance.now();
+      setCallout(S.count.s>=3?'STRUCK OUT':'TAKE — STRIKE');
+    });
+    seqAfter(F.dur+750,finishBat);
+  }
 }
 
 /* ----- results ----- */
