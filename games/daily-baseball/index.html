@@ -563,7 +563,7 @@ function lsSet(k,v){try{localStorage.setItem(k,v);}catch(e){}}
 function todayStr(){return BB.todayStr();}
 
 /* ---------- leaderboard client (shared pattern) ---------- */
-var LEADERBOARD_URL=''; // <-- paste the Apps Script web-app URL here to go live
+var LEADERBOARD_URL='https://script.google.com/macros/s/AKfycbweCdB91evaNssQ8DwTslFAvNuwho8ivWnPsf5j29MVfXezYoWUFGatJ3cXqKBVUxTmsg/exec'; // live 2026-10-11
 function apiGet(p){if(!LEADERBOARD_URL)return Promise.reject(new Error('no-url'));
   var c=new AbortController(),t=setTimeout(function(){c.abort();},8000);
   var q=Object.keys(p).map(function(k){return encodeURIComponent(k)+'='+encodeURIComponent(p[k]);}).join('&');
