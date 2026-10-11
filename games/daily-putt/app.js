@@ -16,10 +16,12 @@
       blows past AND bends offline (push/pull). EASED (below) =
       leaves it short. Every putt comes down to timing.
 
-   Green reading: top-down green, flag always visible, slope shown
-   as a % numeral + downhill arrows on the surface. Slopes move the
-   ball -- reading slope %/arrows and adjusting the marker IS the
-   skill. Pace matters more than line.
+   Green reading: top-down green with hillshaded depth art generated
+   from the same height field as the physics -- what you see is what
+   breaks the putt. Flag always visible; slope shown as a % numeral +
+   downhill-arrow pill by the ball. Reading the hills and adjusting
+   the marker IS the skill. Every hole opens near the edge of the
+   green: long putts (25-45ft) across real undulation.
 
    Rules: 9 date-seeded greens (same for everyone), par 2 (par 3 on
    long greens), up to 6 putts per green -- after 6 the ball is
@@ -77,15 +79,15 @@ function overswingBend(n,seed){
    Physics AND the drawn slope arrows both sample the same numeric
    gradient, so they always agree. */
 var ARCHES=[
-  {id:'gentle',  name:'Gentle tilt',   R:[26,34], dMin:14, dMax:26},
-  {id:'steep',   name:'Side slope',    R:[24,30], dMin:12, dMax:22},
-  {id:'tier',    name:'Two-tier',      R:[28,36], dMin:16, dMax:30},
-  {id:'ridge',   name:'Center ridge',  R:[26,34], dMin:16, dMax:28},
-  {id:'bowl',    name:'Bowl',          R:[24,32], dMin:12, dMax:24},
-  {id:'sbreak',  name:'S-break',       R:[28,36], dMin:18, dMax:32},
-  {id:'pinch',   name:'Bunker pinch',  R:[26,32], dMin:14, dMax:26},
-  {id:'lag',     name:'Long lag',      R:[36,44], dMin:52, dMax:66},
-  {id:'tiny',    name:'Tiny green',    R:[12,16], dMin:10, dMax:18}
+  {id:'gentle',  name:'Gentle tilt',   R:[26,34], dMin:25, dMax:35},
+  {id:'steep',   name:'Side slope',    R:[24,30], dMin:25, dMax:34},
+  {id:'tier',    name:'Two-tier',      R:[28,36], dMin:28, dMax:40},
+  {id:'ridge',   name:'Center ridge',  R:[26,34], dMin:28, dMax:40},
+  {id:'bowl',    name:'Bowl',          R:[26,34], dMin:25, dMax:35},
+  {id:'sbreak',  name:'S-break',       R:[28,36], dMin:30, dMax:42},
+  {id:'pinch',   name:'Bunker pinch',  R:[26,32], dMin:25, dMax:35},
+  {id:'lag',     name:'Long lag',      R:[36,44], dMin:40, dMax:55},
+  {id:'tiny',    name:'Tiny green',    R:[16,20], dMin:22, dMax:30}
 ];
 
 /* numeric gradient of h -- single source of truth for physics + visuals */
@@ -99,6 +101,40 @@ function slopeInfo(h,x,y){
   var m=Math.sqrt(g.x*g.x+g.y*g.y);
   if(m<0.004)return{pct:0,dx:0,dy:0,flat:true};
   return{pct:m*100,dx:-g.x/m,dy:-g.y/m,flat:false};
+}
+
+/* ============ depth art: hillshade generated FROM the height field ====
+   The same h(x,y) that drives the physics gradient is sampled onto a
+   grid; per-pixel hillshading (light from the NW) plus soft elevation
+   contours give the green visible hills and levels. What you see IS
+   what breaks the putt -- art and physics can never disagree. */
+function shadeGrid(green,W,H){
+  var bb=green.bbox,pad=7;
+  var x0=bb.x0-pad,x1=bb.x1+pad,y0=bb.y0-pad,y1=bb.y1+pad;
+  var dx=(x1-x0)/(W-1),dy=(y1-y0)/(H-1);
+  var hg=new Float32Array(W*H),hmin=1e9,hmax=-1e9;
+  var i,j;
+  for(j=0;j<H;j++)for(i=0;i<W;i++){
+    var hv=green.h(x0+i*dx,y0+j*dy);
+    hg[j*W+i]=hv; if(hv<hmin)hmin=hv; if(hv>hmax)hmax=hv;
+  }
+  var hr=hmax-hmin; if(hr<1e-6)hr=1e-6;
+  var out=new Float32Array(W*H*3); /* r,g,b 0..255 */
+  for(j=0;j<H;j++)for(i=0;i<W;i++){
+    var hx0=hg[j*W+Math.max(0,i-1)],hx1=hg[j*W+Math.min(W-1,i+1)];
+    var hy0=hg[Math.max(0,j-1)*W+i],hy1=hg[Math.min(H-1,j+1)*W+i];
+    var gx=(hx1-hx0)/(2*dx),gy=(hy1-hy0)/(2*dy);
+    var inv=1/Math.sqrt(gx*gx+gy*gy+1);
+    var li=clamp((-gx*inv)*-0.55+(-gy*inv)*-0.55+inv*0.72,0,1); /* N dot L */
+    var shade=0.70+0.50*li;                 /* 0.70..1.20 luminance */
+    var t=(hg[j*W+i]-hmin)/hr;              /* 0 low .. 1 high */
+    var r=50+t*40, gg=115+t*45, b=56+t*22;  /* lows deeper, highs sunlit */
+    var cf=Math.abs((((hg[j*W+i]/0.10)%1)+1)%1-0.5);
+    var contour=cf<0.04?0.92:1.0;           /* soft contour every 0.10 ft */
+    var k=shade*contour, o=(j*W+i)*3;
+    out[o]=clamp(r*k,0,255);out[o+1]=clamp(gg*k,0,255);out[o+2]=clamp(b*k,0,255);
+  }
+  return{data:out,w:W,h:H,x0:x0,y0:y0,dx:dx,dy:dy};
 }
 
 /* Smooth, round green outline: a closed curve whose radius is a pure sum of
@@ -135,29 +171,33 @@ function buildGreen(rng,archId){
   var R=A.R[0]+rng()*(A.R[1]-A.R[0]);
   var waist=(archId==='pinch')?0.34:0;
   var poly=blobPoly(rng,0,0,R,waist);
-  /* place ball+cup as a pair so both are always on the green:
-     symmetric about a jittered center at the wanted distance apart */
+  /* EDGE STARTS: the ball opens near the edge of the green and the cup
+     sits roughly across from it, so every opening putt is long and
+     crosses the green's features. Both verified inside the boundary,
+     cup kept 2.5ft clear of the edge. */
   var wantD=A.dMin+rng()*(A.dMax-A.dMin);
-  var ball=null,cup=null,k2,a2,dx2,dy2,bx2,by2,cx3,cy3;
-  for(var k=0;k<400&&!ball;k++){
-    var a=rng()*Math.PI*2, dx=Math.cos(a), dy=Math.sin(a);
-    var jx=(rng()-0.5)*R*0.5, jy=(rng()-0.5)*R*0.5;
-    bx2=jx+dx*wantD/2; by2=jy+dy*wantD/2;
-    cx3=jx-dx*wantD/2; cy3=jy-dy*wantD/2;
-    if(inPoly(bx2,by2,poly)&&inPoly(cx3,cy3,poly)){ball={x:bx2,y:by2};cup={x:cx3,y:cy3};}
-  }
-  if(!ball){ /* green too small for wantD: shrink until a pair fits */
-    var wd=wantD;
-    while(wd>A.dMin*0.5&&!ball){
-      wd*=0.9;
-      for(k2=0;k2<200&&!ball;k2++){
-        a2=rng()*Math.PI*2; dx2=Math.cos(a2); dy2=Math.sin(a2);
-        bx2=dx2*wd/2; by2=dy2*wd/2; cx3=-dx2*wd/2; cy3=-dy2*wd/2;
-        if(inPoly(bx2,by2,poly)&&inPoly(cx3,cy3,poly)){ball={x:bx2,y:by2};cup={x:cx3,y:cy3};}
+  var ball=null,cup=null;
+  function tryPair(wd){
+    for(var k=0;k<600;k++){
+      var a=rng()*Math.PI*2;
+      var br=R*(0.76+rng()*0.14);            /* 76-90% of radius: near the edge */
+      var bx=br*Math.cos(a), by=br*Math.sin(a);
+      var ca=a+Math.PI+(rng()-0.5)*1.1;       /* cup roughly across the green */
+      var cx=bx+Math.cos(ca)*wd, cy=by+Math.sin(ca)*wd;
+      if(!inPoly(bx,by,poly)||!inPoly(cx,cy,poly))continue;
+      var ok=true;
+      for(var m=0;m<poly.length;m+=4){        /* cup margin from the edge */
+        if(dist2(cx,cy,poly[m].x,poly[m].y)<2.5){ok=false;break;}
       }
+      if(!ok)continue;
+      return{ball:{x:bx,y:by},cup:{x:cx,y:cy}};
     }
+    return null;
   }
-  if(!ball){ball={x:-R*0.3,y:0};cup={x:R*0.3,y:0};}
+  var wd=wantD,pair=null;
+  while(wd>=18&&!pair){pair=tryPair(wd);wd*=0.92;}
+  if(pair){ball=pair.ball;cup=pair.cup;}
+  else{ball={x:-R*0.3,y:0};cup={x:R*0.3,y:0};}
   var d=dist2(ball.x,ball.y,cup.x,cup.y);
   var lineA=Math.atan2(cup.y-ball.y,cup.x-ball.x);
 
@@ -218,7 +258,8 @@ function buildGreen(rng,archId){
     ];
     h=(function(s,tA){return function(x,y){return s*(x*Math.cos(tA)+y*Math.sin(tA));};})(s,tA);
   }else if(archId==='lag'){
-    s=0.008+rng()*0.006;
+    s=0.006+rng()*0.004; /* kept gentle: a 45ft dead-uphill putt at 1.4%
+      was only makeable on a knife-edge (n=87 + 15% extra mark) */
     h=(function(s,tA){return function(x,y){return s*(x*Math.cos(tA)+y*Math.sin(tA));};})(s,tA);
   }else{ /* tiny */
     s=0.014+rng()*0.010;
@@ -341,6 +382,9 @@ function resize(){
   cw=window.innerWidth;ch=window.innerHeight;
   canvas.width=Math.round(cw*dpr);canvas.height=Math.round(ch*dpr);
   ctx.setTransform(dpr,0,0,dpr,0,0);
+  if(G.greens.length&&G.hole<9){ /* keep camera + hillshade in sync */
+    fitStatic(G.greens[G.hole]);buildShade(G.greens[G.hole]);
+  }
 }
 window.addEventListener('resize',resize);
 
@@ -396,6 +440,26 @@ function drawAim(green){
   ctx.strokeStyle=locked?'#fbbf24':'#ffffff';
   ctx.lineWidth=3.5;
   ctx.beginPath();ctx.moveTo(bs.x,bs.y);ctx.lineTo(ms.x,ms.y);ctx.stroke();
+  /* power notches: expected carry at the bar's 25/50/75% ticks, using the
+     exact same mapping (carry = markerDist * f). Stop the needle at a
+     tick and the ball dies at its notch -- on flat ground, exactly. */
+  var md0=dist2(G.ballX,G.ballY,G.markerX,G.markerY);
+  if(md0>0.5){
+    var ux=(G.markerX-G.ballX)/md0, uy=(G.markerY-G.ballY)/md0;
+    var px0=-uy, py0=ux; /* perpendicular */
+    var hl=Math.max(7,cam.scale*0.35);
+    [0.25,0.5,0.75].forEach(function(f){
+      var sp=w2s(G.ballX+ux*md0*f,G.ballY+uy*md0*f);
+      ctx.strokeStyle='rgba(20,60,30,0.65)';ctx.lineWidth=5;
+      ctx.beginPath();
+      ctx.moveTo(sp.x-px0*hl,sp.y-py0*hl);ctx.lineTo(sp.x+px0*hl,sp.y+py0*hl);
+      ctx.stroke();
+      ctx.strokeStyle='#ffffff';ctx.lineWidth=2.5;
+      ctx.beginPath();
+      ctx.moveTo(sp.x-px0*hl,sp.y-py0*hl);ctx.lineTo(sp.x+px0*hl,sp.y+py0*hl);
+      ctx.stroke();
+    });
+  }
   /* marker ring */
   var mr=Math.max(9,cam.scale*0.45);
   ctx.strokeStyle=locked?'#b45309':'#b45309';
@@ -460,26 +524,57 @@ function drawSlopeBadge(green){
   ctx.fillText(txt,tx,by+18);
 }
 
+/* hillshade canvas: baked once per hole from shadeGrid (the height
+   field), drawn clipped to the green every frame. Rebuilt when the
+   camera changes (new hole / resize). */
+var shadeCv=null,shadeMeta=null;
+function buildShade(green){
+  var bb=green.bbox,pad=7;
+  var wWorld=(bb.x1-bb.x0)+2*pad, hWorld=(bb.y1-bb.y0)+2*pad;
+  var longPx=Math.max(wWorld,hWorld)*cam.scale;
+  var sf=Math.min(1,420/Math.max(1,longPx));
+  var W=Math.max(64,Math.round(wWorld*cam.scale*sf));
+  var H=Math.max(64,Math.round(hWorld*cam.scale*sf));
+  var sg=shadeGrid(green,W,H);
+  var cv=document.createElement('canvas');cv.width=W;cv.height=H;
+  var c2=cv.getContext('2d');
+  var img=c2.createImageData(W,H),dd=img.data;
+  for(var i=0;i<W*H;i++){
+    dd[i*4]=sg.data[i*3];dd[i*4+1]=sg.data[i*3+1];dd[i*4+2]=sg.data[i*3+2];dd[i*4+3]=255;
+  }
+  c2.putImageData(img,0,0);
+  shadeCv=cv;
+  shadeMeta={x0:sg.x0,y0:sg.y0,w:wWorld,h:hWorld};
+}
+
 function drawGreen(green,state){
   /* backdrop */
   var bg=ctx.createLinearGradient(0,0,0,ch);
   bg.addColorStop(0,'#2c6e35');bg.addColorStop(1,'#1d4a26');
   ctx.fillStyle=bg;ctx.fillRect(0,0,cw,ch);
 
-  /* green body */
+  /* green body: hillshaded depth art baked from the height field --
+     what you see is what breaks the putt */
   ctx.save();
   pathOf(green.poly);
   ctx.fillStyle='#3a7d3f';ctx.fill();
-  /* mowing stripes clipped to green */
+  /* hillshade layer, clipped to the green */
   ctx.clip();
+  if(shadeCv&&shadeMeta){
+    var sh0=w2s(shadeMeta.x0,shadeMeta.y0);
+    ctx.drawImage(shadeCv,sh0.x,sh0.y,shadeMeta.w*cam.scale,shadeMeta.h*cam.scale);
+  }
+  /* mowing stripes, subtle over the shading */
   var s0=w2s(green.bbox.x0-4,green.bbox.y0-4),s1=w2s(green.bbox.x1+4,green.bbox.y1+4);
   var wpx=Math.abs(s1.x-s0.x),hpx=Math.abs(s1.y-s0.y);
   var stripeH=Math.max(14,cam.scale*2.2),yy=s0.y,flip=false;
+  ctx.globalAlpha=0.10;
   while(yy<s1.y){
-    ctx.fillStyle=flip?'#55a04a':'#5cab52';
+    ctx.fillStyle=flip?'#1d4a26':'#ffffff';
     ctx.fillRect(s0.x-4,yy,wpx+8,stripeH);
     yy+=stripeH;flip=!flip;
   }
+  ctx.globalAlpha=1;
   /* inner shading toward edges (radii must be >= 0 -- negative throws) */
   var cc=w2s((green.bbox.x0+green.bbox.x1)/2,(green.bbox.y0+green.bbox.y1)/2);
   var rg=ctx.createRadialGradient(cc.x,cc.y,Math.min(wpx,hpx)*0.28,cc.x,cc.y,Math.max(wpx,hpx)*0.62);
@@ -666,6 +761,7 @@ function startRound(mode){
 function startHole(){
   var g=G.greens[G.hole];
   fitStatic(g);
+  buildShade(g); /* hillshade depth art for this green */
   G.phase='aim';
   /* marker defaults to the cup: tap the green to adjust */
   G.markerX=g.cup.x;G.markerY=g.cup.y;G.markerSet=true;
@@ -676,7 +772,7 @@ function startHole(){
   needleBar.classList.add('hidden');
   clearTicks();
   setBtn('lock');
-  phaseHint.textContent='Tap the green to move the marker \u00B7 then LOCK THE LINE';
+  phaseHint.textContent='Touch + drag the green to place the marker \u00B7 then LOCK THE LINE';
   resultLine.classList.add('hidden');
   renderStrip();
 }
@@ -692,23 +788,41 @@ function setBtn(kind){
   else phaseBtn.classList.add('hidden');
 }
 
-/* ---- input: tap the green to drop/adjust the marker ---- */
-function placeMarker(cx,cy){
-  var w=s2w(cx,cy);
-  if(!inPoly(w.x,w.y,G.greens[G.hole].poly))return; /* must be on the green */
-  if(dist2(w.x,w.y,G.ballX,G.ballY)<1.5)return;       /* not on top of the ball */
-  G.markerX=w.x;G.markerY=w.y;G.markerSet=true;
+/* Tap/drag placement: on touch the marker floats ~48px ABOVE the
+   fingertip (so the finger never covers it) with the line + distance
+   pill updating live; it commits on release. Mouse uses no offset. */
+var dragging=false,dragOff=0;
+function placeMarkerAt(cx,cy,offPx){
+  var g=G.greens[G.hole];
+  var offs=offPx?[offPx,32,16,0]:[0];
+  for(var i=0;i<offs.length;i++){
+    var w=s2w(cx,cy-offs[i]);
+    if(!inPoly(w.x,w.y,g.poly))continue;       /* must be on the green */
+    if(dist2(w.x,w.y,G.ballX,G.ballY)<1.5)continue; /* not on top of the ball */
+    G.markerX=w.x;G.markerY=w.y;G.markerSet=true;
+    return true;
+  }
+  return false;
 }
 canvas.addEventListener('pointerdown',function(e){
   if(G.phase==='aim'){
-    placeMarker(e.clientX,e.clientY);
+    dragging=true;dragOff=(e.pointerType==='mouse')?0:48;
+    placeMarkerAt(e.clientX,e.clientY,dragOff);
   }else if(G.phase==='locked'){
-    /* tap the green to go back and adjust */
+    /* tap-drag the green to go back and adjust in one gesture */
     G.phase='aim';
+    dragging=true;dragOff=(e.pointerType==='mouse')?0:48;
+    placeMarkerAt(e.clientX,e.clientY,dragOff);
     setBtn('lock');
-    phaseHint.textContent='Tap the green to move the marker \u00B7 then LOCK THE LINE';
+    phaseHint.textContent='Touch + drag the green to place the marker \u00B7 then LOCK THE LINE';
   }
 });
+canvas.addEventListener('pointermove',function(e){
+  if(dragging&&G.phase==='aim')placeMarkerAt(e.clientX,e.clientY,dragOff);
+});
+function endDrag(){dragging=false;}
+canvas.addEventListener('pointerup',endDrag);
+canvas.addEventListener('pointercancel',endDrag);
 
 /* distance calibration ticks on the needle bar: at 25/50/75% of pure
    power, show the expected carry in feet for the CURRENT marker distance,
@@ -877,7 +991,7 @@ function frame(t){
     if(G.phase==='roll'&&G.rolling){
       var rr=G.rolling;
       rr.t+=dt;
-      var want=Math.min(rr.res.trail.length,Math.floor(rr.t*90));
+      var want=Math.min(rr.res.trail.length,Math.floor(rr.t*90/1.1)); /* 10% slower roll pacing (visual only) */
       if(want>rr.shown){
         rr.shown=want;
         var tp=rr.res.trail[want-1];
@@ -1117,14 +1231,14 @@ var PuttTest={
   ARCHES:ARCHES,fitStatic:fitStatic,w2s:w2s,s2w:s2w,cam:cam,
   needleGrade:needleGrade,needleToPower:needleToPower,overswingBend:overswingBend,
   resolveStroke:resolveStroke,puttOutcome:puttOutcome,
-  scoreName:scoreName,fmtVsPar:fmtVsPar,
+  scoreName:scoreName,fmtVsPar:fmtVsPar,shadeGrid:shadeGrid,buildShade:buildShade,
   PANEL_H:PANEL_H,TOP_H:TOP_H,PURE_LO:PURE_LO,PURE_HI:PURE_HI,PURE_MID:PURE_MID,
   SWEEP_T:SWEEP_T,
   consts:{FRICTION:FRICTION,SLOPE_G:SLOPE_G,CUP_R:CUP_R,V_CAP:V_CAP,DMAX:DMAX,
     BAR_MAX:BAR_MAX,V_STOP:V_STOP},
   flow:{ /* driven by the render smoke test */
     G:G,startRound:startRound,doStop:doStop,settleStroke:settleStroke,
-    frame:frame,placeMarker:placeMarker,phaseBtn:phaseBtn
+    frame:frame,placeMarkerAt:placeMarkerAt,phaseBtn:phaseBtn
   }
 };
 if(typeof module!=='undefined'&&module.exports)module.exports=PuttTest;
