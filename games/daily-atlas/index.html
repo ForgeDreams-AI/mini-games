@@ -85,7 +85,6 @@
     </div>
     <div class="card">
       <button class="btn btn-primary" id="btn-daily">▶ Play today's challenge</button>
-      <button class="btn btn-secondary" id="btn-practice">Practice (random 30)</button>
       <button class="btn btn-secondary" id="btn-board">🏆 Leaderboard</button>
     </div>
     <div class="card" id="daily-lock" style="display:none">
@@ -275,22 +274,18 @@ function refreshMenu(){
     el('daily-countdown').textContent=fmtCountdown(msToMidnight());
   }
 }
-function startGame(mode){
-  if(mode==='daily'&&dailyLocked()){refreshMenu();show('screen-menu');return;}
+function startGame(){
+  if(dailyLocked()){refreshMenu();show('screen-menu');return;}
   var date=todayStr();
-  var set,seedLabel;
-  if(mode==='daily'){set=dailySet(date);seedLabel='DAILY';}
-  else{var r=mulberry32((Math.random()*1e9)|0);set=seededShuffle(COUNTRIES.map(function(_,i){return i;}),r).slice(0,30);seedLabel='PRACTICE';}
-  G={mode:mode,date:date,set:set,round:0,score:0,results:[],locked:false,submitted:false,
-     lives:(mode==='daily'?3:Infinity)};
-  el('game-mode').textContent=seedLabel;
-  el('game-lives').style.display=(mode==='daily'?'':'none');
+  var set=dailySet(date);
+  G={mode:'daily',date:date,set:set,round:0,score:0,results:[],locked:false,submitted:false,lives:3};
+  el('game-mode').textContent='DAILY';
+  el('game-lives').style.display='';
   updateLives();
   show('screen-game');
   nextRound();
 }
 function updateLives(){
-  if(G.mode!=='daily')return;
   var l=Math.max(0,G.lives);
   el('game-lives').textContent='❤'.repeat(l)+'🖤'.repeat(3-l);
 }
@@ -298,7 +293,7 @@ function nextRound(){
   if(G.round>=30){finishGame();return;}
   G.locked=false;
   var correct=G.set[G.round];
-  var opts=roundOptions(G.mode==='daily'?G.date:'practice|'+Date.now(),G.round,correct);
+  var opts=roundOptions(G.date,G.round,correct);
   el('game-round').textContent=(G.round+1)+'/30';
   el('game-score').textContent=G.score+' ✅';
   showRelief(correct);
@@ -313,7 +308,7 @@ function nextRound(){
 function answer(btn,hit,correct){
   if(G.locked)return; G.locked=true;
   G.results.push(hit); if(hit)G.score++;
-  if(!hit&&G.mode==='daily'){G.lives--;updateLives();}
+  if(!hit){G.lives--;updateLives();}
   el('game-score').textContent=G.score+' ✅';
   var btns=el('options').children;
   for(var i=0;i<btns.length;i++){
@@ -322,29 +317,23 @@ function answer(btn,hit,correct){
   }
   if(!hit)btn.classList.add('wrong');
   setTimeout(function(){
-    if(G.mode==='daily'&&G.lives<=0){finishGame(false);return;}
+    if(G.lives<=0){finishGame(false);return;}
     G.round++;nextRound();
   },hit?450:900);
 }
 function finishGame(won){
   won=(won!==false);
   var s=loadStats();
-  if(G.mode==='daily'){
-    var rec=recordDaily(G.date,G.score,won);
-    lsSet(DLS,G.date); lsSet(DSS,String(G.score));
-    if(won){
-      el('done-title').textContent="Today's challenge";
-      el('done-note').textContent=rec.replay?'Already played today — this run was just for fun.':'Saved! Come back tomorrow to keep your streak.';
-    }else{
-      el('done-title').textContent='💀 Out of lives';
-      el('done-note').textContent='You used all 3 lives — that counts as today\'s run. Come back at midnight.';
-    }
-    maybeSubmit();
+  var rec=recordDaily(G.date,G.score,won);
+  lsSet(DLS,G.date); lsSet(DSS,String(G.score));
+  if(won){
+    el('done-title').textContent="Today's challenge";
+    el('done-note').textContent=rec.replay?'Already played today — this run was just for fun.':'Saved! Come back tomorrow to keep your streak.';
   }else{
-    el('done-title').textContent='Practice round';
-    el('done-note').textContent='Practice never touches your stats or the leaderboard.';
-    el('done-rank').textContent=''; el('done-rank-sub').textContent='';
+    el('done-title').textContent='💀 Out of lives';
+    el('done-note').textContent='You used all 3 lives — that counts as today\'s run. Come back at midnight.';
   }
+  maybeSubmit();
   el('done-score').textContent=G.score+'/'+G.results.length;
   show('screen-done');
 }
@@ -448,8 +437,7 @@ function nameGo(){
 
 /* ================= wire up ================= */
 document.addEventListener('DOMContentLoaded',function(){
-  el('btn-daily').onclick=function(){startGame('daily');};
-  el('btn-practice').onclick=function(){startGame('practice');};
+  el('btn-daily').onclick=function(){startGame();};
   el('btn-board').onclick=loadBoard;
   el('btn-board2').onclick=loadBoard;
   el('btn-menu').onclick=function(){refreshMenu();show('screen-menu');};
