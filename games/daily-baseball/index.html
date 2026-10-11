@@ -462,7 +462,7 @@ function renderScore(){
   el('score-you').textContent=S.you; el('score-cpu').textContent=S.cpu;
   el('inning-label').textContent=S.inning+(S.half==='top'?' ▲':' ▼');
   el('game-outs').textContent=S.outs+' OUT';
-  var cols=['#base1','#base2','#base3'];
+  var cols=['base1','base2','base3'];
   for(var i=0;i<3;i++) el(cols[i]).setAttribute('fill',S.bases[i]?'#1f7a4c':'#fff');
   el('countline').textContent = S.half==='top'
     ? ('Count: '+S.count.b+'–'+S.count.s)
