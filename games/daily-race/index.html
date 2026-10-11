@@ -215,7 +215,7 @@ var SEG_LEN=90, NSEG=150, SAMPLES=4;
 var MAXV=380, ACCEL=640, TURNSPD=3.35;   /* v9: punchy launch acceleration — the car feels fast off the line */
 var LAUNCH_SPD=0.55;                  /* v9: fraction of MAXV the car starts with at GO */
 var CAR_HALF_W=16, BOUNCE_KEEP=0.8, WALL_KICK=0.14;  /* v8: inward bumper kick off walls — a car can never wedge into a curving wall (guide assist alone eases toward the tangent, which points INTO the wall) */
-var CAR_DRAW_S=0.88, TRAFFIC_DRAW_S=1.6;/* v9: much bigger traffic cars — unmistakable obstacles */
+var CAR_DRAW_S=1.25, TRAFFIC_DRAW_S=1.6;/* v9.1: player car bigger + marker chevron — always findable at a glance next to big traffic */
 var TRAFFIC_HIT_R=26;                 /* v9: hit radius matches the 1.6x traffic sprite */
 var LANE_W=58;                        /* road width = lane count x lane width */
 var AIR_DUR=0.8, SPIN_DUR=0.6;        /* bomb pop / oil spin durations */
@@ -314,13 +314,14 @@ function generateTrack(seedStr){
     else if(z>=1&&m<=0.7*NSEG&&r2<0.22){boosts.push({seg:Math.min(m*SAMPLES,NS-1),lat:(rng()*2-1)*0.5,w:56});}
   }
   /* AI traffic: slower cars in their lanes, denser toward the end — always dodgeable:
-     min 6-segment gaps between cars, start area clear */
+     min 5-segment gaps between cars, start area clear.
+     v9.1: density raised ~25% — no more long empty stretches, still fair */
   var traffic=[],lastTrafficSeg=-10;
   var TCOLORS=['#ef4444','#f59e0b','#a855f7','#22c55e','#eab308','#f472b6'];
   for(var tm=8;tm<NSEG-2;tm++){
     var tz=zoneOf(tm);
-    var dens=[0.26,0.41,0.55][tz];
-    if(rng()<dens&&(tm-lastTrafficSeg)>=6){
+    var dens=[0.33,0.49,0.63][tz];
+    if(rng()<dens&&(tm-lastTrafficSeg)>=5){
       var nl=lanesOfZone(tz);
       var lane=Math.floor(rng()*nl);
       traffic.push({seg:tm*SAMPLES,lane:lane,off:(lane-(nl-1)/2)*LANE_W,
@@ -377,9 +378,16 @@ function createCar(tr){
 /* shockwave rings: canvas-drawn impact juice (pixel-styled expanding rings).
    Spawned by popBomb; rendered + aged in the app layer. */
 var shockRings=[];
+var hitStopT=0;   /* crash hit-stop: brief sim freeze so the impact lands.
+   Set by popBomb (core), consumed by the app loop — declared here so the
+   extracted sim core stays self-contained. */
 function spawnRing(x,y){
-  if(shockRings.length>12)shockRings.shift();
-  shockRings.push({x:x,y:y,life:0.45,max:0.45});
+  /* triple staggered burst: the impact reads as an explosion, not a spark */
+  var delays=[0,0.09,0.18];
+  for(var k=0;k<delays.length;k++){
+    if(shockRings.length>18)shockRings.shift();
+    shockRings.push({x:x,y:y,life:0.6,max:0.6,delay:delays[k]});
+  }
 }
 /* bomb pop: the car pops into the air and STALLS — dead stop for STALL_DUR,
    then it accelerates back up. No restart, no added time penalty.
@@ -393,6 +401,7 @@ function popBomb(car,t,hd){
   car.speed=0;
   car.popped=true;
   car.stats.pops++;
+  hitStopT=0.09;   /* freeze the sim for 90ms — the hit lands before the stall */
   spawnRing(car.x,car.y);
   /* nudge back along the track tangent (not car heading) so lateral position —
      and wall containment — is preserved */
@@ -778,7 +787,7 @@ var pointers={};              /* pointerId -> 'l' | 'r' */
 var holdL=false,holdR=false;
 var hintTimer=null;
 var dust=[],dustAcc=0;
-var shakeT=0;                 /* bomb-pop screen shake timer (artist juice) */
+var shakeT=0;                 /* crash screen shake timer (artist juice) */
 var FIXED=1/120,MAXSTEPS=8;   /* fixed-step physics: the sim is identical on 60Hz and 120Hz phones */
 
 function newTrack(seed){
@@ -1103,10 +1112,20 @@ function drawCarScreen(){
     if(raceT<car.airUntil){var ap=1-(car.airUntil-raceT)/AIR_DUR;airH=Math.sin(clamp(ap,0,1)*Math.PI);}
   }
   ctx.save();ctx.translate(sx,sy);
+  /* player marker: cyan chevron floating above the car — the eye finds it
+     instantly, even mid-pack against the big traffic cars */
+  if(car&&state==='racing'){
+    var mb=Math.sin(raceT*6)*2;
+    var my=-15*CAR_DRAW_S-9+mb;
+    ctx.fillStyle='rgba(34,211,238,0.9)';
+    ctx.beginPath();ctx.moveTo(-7,my);ctx.lineTo(7,my);ctx.lineTo(0,my+7);ctx.closePath();ctx.fill();
+    ctx.fillStyle='rgba(207,250,254,0.95)';
+    ctx.beginPath();ctx.moveTo(-3.5,my+1);ctx.lineTo(3.5,my+1);ctx.lineTo(0,my+4.5);ctx.closePath();ctx.fill();
+  }
   /* chunky pixel shadow: grows and drifts while airborne */
   ctx.fillStyle='rgba(0,0,0,'+(0.35-0.15*airH).toFixed(3)+')';
-  var shw=8+8*airH;
-  ctx.fillRect(-shw+2,-11+4*airH,shw*2,22+8*airH);
+  var shw=10+10*airH;
+  ctx.fillRect(-shw+2,-13+5*airH,shw*2,26+10*airH);
   var sc=1+0.45*airH;
   ctx.scale(sc*CAR_DRAW_S,sc*CAR_DRAW_S);
   ctx.rotate(spinA);
@@ -1146,8 +1165,8 @@ function render(){
   /* world transform: car pinned at screen (PW/2, PH*0.62) pointing up;
      world rotates by -camHd around the car */
   ctx.translate(PW/2,PH*0.62);
-  if(shakeT>0){   /* bomb-pop shake: sharp kick, decays in ~0.35s */
-    var sm=8*(shakeT/0.35);
+  if(shakeT>0){   /* crash shake: hard kick, decays over ~0.55s */
+    var sm=13*(shakeT/0.55);
     ctx.translate((Math.random()-0.5)*2*sm,(Math.random()-0.5)*2*sm);
   }
   ctx.scale(scale,scale);
@@ -1259,24 +1278,32 @@ function render(){
   }
   if(inR(sf.x,sf.y))drawGantry(sf.x,sf.y,sf.hd,sf.w);
 
-  /* oil slicks: chunky pixel blobs */
+  /* oil slicks: glossy dark puddles with an iridescent rainbow sheen — unmistakable */
   for(j=0;j<track.oils.length;j++){
     var o=track.oils[j],oc=pts[o.seg];
     var ox=oc.x+Math.cos(oc.hd)*o.lat*(oc.w/2),oy=oc.y+Math.sin(oc.hd)*o.lat*(oc.w/2);
     if(!inR(ox,oy))continue;
-    ctx.save();ctx.translate(ox,oy);ctx.rotate(0.35);
+    ctx.save();ctx.translate(ox,oy);
     var R2=o.r;
-    ctx.fillStyle='#0a0c14';
-    ctx.fillRect(-R2,-R2*0.7,R2*2,R2*1.4);
-    ctx.fillRect(-R2*0.7,-R2,R2*1.4,R2*2);
-    ctx.fillStyle='#1a1e30';
-    ctx.fillRect(-R2*0.7,-R2*0.45,R2*1.4,R2*0.9);
-    ctx.fillStyle='rgba(190,180,255,0.65)';
-    ctx.fillRect(-R2*0.55,-R2*0.5,R2*0.5,2);
-    ctx.fillStyle='rgba(255,255,255,0.8)';
-    ctx.fillRect(-R2*0.5,-R2*0.45,R2*0.22,1);
-    ctx.strokeStyle='rgba(150,140,255,0.55)';ctx.lineWidth=2;
-    ctx.strokeRect(-R2,-R2*0.7,R2*2,R2*1.4);
+    /* irregular puddle body: overlapping near-black glossy ellipses */
+    ctx.fillStyle='#05070d';
+    ctx.beginPath();ctx.ellipse(0,0,R2,R2*0.62,0.3,0,6.283);ctx.fill();
+    ctx.fillStyle='#0a0f1e';
+    ctx.beginPath();ctx.ellipse(-R2*0.38,-R2*0.14,R2*0.55,R2*0.34,-0.4,0,6.283);ctx.fill();
+    ctx.beginPath();ctx.ellipse(R2*0.42,R2*0.2,R2*0.45,R2*0.3,0.5,0,6.283);ctx.fill();
+    ctx.fillStyle='#111a30';
+    ctx.beginPath();ctx.ellipse(R2*0.05,-R2*0.05,R2*0.5,R2*0.26,0.15,0,6.283);ctx.fill();
+    /* rainbow sheen: thin iridescent arcs across the slick */
+    ctx.lineWidth=3;
+    ctx.strokeStyle='rgba(255,0,255,0.38)';
+    ctx.beginPath();ctx.ellipse(0,0,R2*0.72,R2*0.42,0.3,3.7,5.1);ctx.stroke();
+    ctx.strokeStyle='rgba(0,255,255,0.34)';
+    ctx.beginPath();ctx.ellipse(0,0,R2*0.6,R2*0.34,0.3,3.9,5.3);ctx.stroke();
+    ctx.strokeStyle='rgba(190,255,0,0.28)';
+    ctx.beginPath();ctx.ellipse(0,0,R2*0.48,R2*0.26,0.3,4.1,5.5);ctx.stroke();
+    /* wet specular highlight */
+    ctx.fillStyle='rgba(255,255,255,0.85)';
+    ctx.beginPath();ctx.ellipse(-R2*0.3,-R2*0.28,R2*0.17,R2*0.08,-0.5,0,6.283);ctx.fill();
     ctx.restore();
   }
 
@@ -1325,15 +1352,22 @@ function render(){
   /* shockwave rings: canvas-drawn pop impact juice (replaces the cheap emoji flash) */
   for(j=0;j<shockRings.length;j++){
     var rg=shockRings[j];
-    if(!inR(rg.x,rg.y))continue;
+    if(rg.delay>0||!inR(rg.x,rg.y))continue;
     var rp=1-rg.life/rg.max;   /* 0 at spawn -> 1 at fade */
-    ctx.strokeStyle='rgba(251,191,36,'+(0.9*(1-rp)).toFixed(3)+')';
-    ctx.lineWidth=5;
-    var rr2=10+rp*64;
+    /* white-hot spawn flash */
+    if(rp<0.2){
+      var fa=0.85*(1-rp/0.2);
+      ctx.fillStyle='rgba(255,255,255,'+fa.toFixed(3)+')';
+      var fr=10+36*(1-rp/0.2);
+      ctx.fillRect(rg.x-fr/2,rg.y-fr/2,fr,fr);
+    }
+    ctx.strokeStyle='rgba(251,191,36,'+(0.95*(1-rp)).toFixed(3)+')';
+    ctx.lineWidth=7;
+    var rr2=14+rp*110;
     ctx.strokeRect(rg.x-rr2,rg.y-rr2,rr2*2,rr2*2);
-    ctx.strokeStyle='rgba(254,243,199,'+(0.7*(1-rp)).toFixed(3)+')';
-    ctx.lineWidth=2.5;
-    var rr3=6+rp*40;
+    ctx.strokeStyle='rgba(254,243,199,'+(0.85*(1-rp)).toFixed(3)+')';
+    ctx.lineWidth=3.5;
+    var rr3=8+rp*70;
     ctx.strokeRect(rg.x-rr3,rg.y-rr3,rr3*2,rr3*2);
   }
 
@@ -1364,6 +1398,12 @@ function loop(ts){
   requestAnimationFrame(loop);
   var dt=Math.min((ts-lastTs)/1000||0,0.05);lastTs=ts;
   if(state==='racing'&&track&&car){
+    if(hitStopT>0){
+      /* hit-stop: freeze the sim for ~90ms so the crash lands. acc is NOT fed during
+         the freeze, so no steps pile up or get shed — the sim stays identical on
+         60Hz and 120Hz phones. */
+      hitStopT-=dt;
+    } else {
     /* fixed-timestep physics: accumulate real time, step the sim at 120Hz.
        Same inputs -> same trajectory on every device and frame rate. */
     acc+=dt;
@@ -1371,12 +1411,13 @@ function loop(ts){
     while(acc>=FIXED&&n<MAXSTEPS){
       raceT+=FIXED;
       stepCar(track,car,input,FIXED,raceT);
-      if(car.popped){car.popped=false;shakeT=0.35;}   /* ring already spawned in popBomb */
+      if(car.popped){car.popped=false;shakeT=0.55;}   /* ring already spawned in popBomb */
       if(car.bounced){car.bounced=false;puff(car.x,car.y,0,0,8,90,0.6,9);}
       acc-=FIXED;n++;
       if(car.finished)break;
     }
     if(n===MAXSTEPS)acc=0;   /* shed backlog after a long hitch — no spiral of death */
+    }   /* end hit-stop else */
     if(shakeT>0)shakeT=Math.max(0,shakeT-dt);
     /* camera: ease the world rotation toward the car's heading */
     camHd+=normAng(car.hd-camHd)*Math.min(1,dt*7);
@@ -1392,8 +1433,10 @@ function loop(ts){
       dp.x+=dp.vx*dt;dp.y+=dp.vy*dt;dp.vx*=0.94;dp.vy*=0.94;dp.life-=dt;
       if(dp.life<=0)dust.splice(i,1);
     }
-    for(i=shockRings.length-1;i>=0;i--){shockRings[i].life-=dt;
-      if(shockRings[i].life<=0)shockRings.splice(i,1);
+    for(i=shockRings.length-1;i>=0;i--){var srg=shockRings[i];
+      if(srg.delay>0){srg.delay-=dt;continue;}   /* staggered rings wait their turn */
+      srg.life-=dt;
+      if(srg.life<=0)shockRings.splice(i,1);
     }
     var totalMs=raceT*1000;
     timerEl.textContent=fmt(totalMs);
