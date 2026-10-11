@@ -79,15 +79,15 @@ function overswingBend(n,seed){
    Physics AND the drawn slope arrows both sample the same numeric
    gradient, so they always agree. */
 var ARCHES=[
-  {id:'gentle',  name:'Gentle tilt',   R:[26,34], dMin:25, dMax:35},
-  {id:'steep',   name:'Side slope',    R:[24,30], dMin:25, dMax:34},
-  {id:'tier',    name:'Two-tier',      R:[28,36], dMin:28, dMax:40},
-  {id:'ridge',   name:'Center ridge',  R:[26,34], dMin:28, dMax:40},
-  {id:'bowl',    name:'Bowl',          R:[26,34], dMin:25, dMax:35},
-  {id:'sbreak',  name:'S-break',       R:[28,36], dMin:30, dMax:42},
-  {id:'pinch',   name:'Bunker pinch',  R:[26,32], dMin:25, dMax:35},
-  {id:'lag',     name:'Long lag',      R:[36,44], dMin:40, dMax:55},
-  {id:'tiny',    name:'Tiny green',    R:[16,20], dMin:22, dMax:30}
+  {id:'gentle',  name:'Kidney',      R:[26,34], dMin:25, dMax:35},
+  {id:'steep',   name:'Crescent',    R:[24,30], dMin:25, dMax:34},
+  {id:'tier',    name:'Peanut',      R:[28,36], dMin:28, dMax:40},
+  {id:'ridge',   name:'Hourglass',   R:[26,34], dMin:28, dMax:40},
+  {id:'bowl',    name:'Clover',      R:[26,34], dMin:25, dMax:35},
+  {id:'sbreak',  name:'Dogleg',      R:[28,36], dMin:30, dMax:42},
+  {id:'pinch',   name:'Pinch',       R:[26,32], dMin:25, dMax:35},
+  {id:'lag',     name:'Long lag',    R:[36,44], dMin:40, dMax:55},
+  {id:'tiny',    name:'Comma',       R:[16,20], dMin:22, dMax:30}
 ];
 
 /* numeric gradient of h -- single source of truth for physics + visuals */
@@ -137,24 +137,89 @@ function shadeGrid(green,W,H){
   return{data:out,w:W,h:H,x0:x0,y0:y0,dx:dx,dy:dy};
 }
 
-/* Smooth, round green outline: a closed curve whose radius is a pure sum of
-   low-frequency sinusoids, sampled densely (160 points). No straight facets,
-   no sharp corners -- it renders like a normal golf green. The same point
-   list is the physics boundary (inPoly), so the ball can never cross the
-   visual edge. */
-function blobPoly(rng,cx,cy,R,waist){
-  var p1=rng()*6.28, p2=rng()*6.28, p3=rng()*6.28;
-  var a1=0.05+0.04*rng(), a2=0.035+0.03*rng(), a3=0.02+0.02*rng();
+function angDiff(a,b){var d=a-b;while(d>Math.PI)d-=2*Math.PI;while(d<-Math.PI)d+=2*Math.PI;return d;}
+
+/* Hard green shapes, smooth curves only. Every outline is a closed curve
+   r(a) built from low-frequency sinusoids and gaussian dents -- C1
+   continuous by construction, sampled densely (160 points). There are NO
+   sharp corners or points, ever: dents are wide soft gaussian bites, never
+   V-cuts. Returns {poly, featA, waistA}: featA is the shape's feature axis
+   (main lobe direction) so ball/cup placement can face the strategy at
+   the putt; the same point list is the physics boundary (inPoly), so the
+   ball can never cross the visual edge. */
+function shapePoly(rng,cx,cy,R,kind,forceWaistA){
   var n=160, pts=[];
+  var p1=rng()*6.283, p2=rng()*6.283;   /* organic wobble phases */
+  var lp=rng()*6.283;                    /* main lobe phase */
+  var wA=(forceWaistA!=null)?forceWaistA:rng()*6.283; /* waist axis */
+  var dA=rng()*6.283;                    /* dent phase */
+  var featA=lp;
+  function wob(a){return 0.030*Math.sin(2*a+p1)+0.020*Math.sin(3*a+p2);}
+  function dent(a,at,depth,width){
+    var da=angDiff(a,at);
+    return -depth*Math.exp(-(da*da)/(2*width*width));
+  }
+  function waist(a,amt,kk){
+    var s=Math.abs(Math.sin(a-wA));
+    return 1-amt*Math.pow(s,kk);
+  }
   for(var i=0;i<n;i++){
-    var a=i/n*Math.PI*2;
-    var w=1+a1*Math.sin(2*a+p1)+a2*Math.sin(3*a+p2)+a3*Math.sin(5*a+p3);
+    var a=i/n*Math.PI*2, w=1+wob(a);
+    if(kind==='kidney'){
+      /* one big lobe, one broad TRUE concavity: classic kidney bean.
+         (d/w^2 > 1 makes the bite genuinely concave, not just flat) */
+      w+=0.18*Math.cos(a-lp);
+      w+=dent(a,dA,0.40,0.60);
+      featA=lp;
+    }else if(kind==='crescent'){
+      /* two horns, deep bay bitten between them on one side: boomerang */
+      w+=0.20*Math.cos(2*(a-lp));
+      w+=dent(a,lp+Math.PI/2,0.32,0.52);
+      featA=lp;
+    }else if(kind==='peanut'){
+      /* two fat lobes, gentle waist between */
+      w+=0.17*Math.cos(2*(a-lp));
+      w*=waist(a,0.20,6);
+      featA=lp;
+    }else if(kind==='hourglass'){
+      /* two bulbs, one narrow neck: the putt MUST cross the neck */
+      w+=0.08*Math.cos(a-lp);
+      w*=waist(a,0.37,8);
+      featA=wA; /* bulbs sit on the waist axis */
+    }else if(kind==='clover'){
+      /* three smooth lobes, softly defined */
+      w+=0.15*Math.cos(3*(a-lp));
+      w+=dent(a,lp+Math.PI/3,0.10,0.35)+dent(a,lp+Math.PI,0.10,0.35)
+         +dent(a,lp+5*Math.PI/3,0.10,0.35);
+      featA=lp;
+    }else if(kind==='dogleg'){
+      /* asymmetric banana: fat head, tapering tail, concave inner curve */
+      w+=0.22*Math.cos(a-lp)+0.10*Math.cos(2*(a-lp)+1.1);
+      w+=dent(a,lp+2.4,0.26,0.50);
+      featA=lp;
+    }else if(kind==='pinch'){
+      /* pinched middle, no sand: pure putting surface */
+      w+=0.13*Math.cos(2*(a-lp));
+      w*=waist(a,0.32,6);
+      featA=lp;
+    }else if(kind==='quad'){
+      /* four gentle lobes on the big green */
+      w+=0.11*Math.cos(4*(a-lp));
+      featA=lp;
+    }else{ /* comma */
+      /* teardrop: big round head tapering to a tail */
+      w+=0.23*Math.cos(a-lp);
+      w+=dent(a,lp+Math.PI,0.12,0.60);
+      featA=lp;
+    }
     var r=R*w;
-    if(waist) r*=(1-waist*Math.pow(Math.abs(Math.sin(a)),6)); /* smooth pinch */
     pts.push({x:cx+Math.cos(a)*r*1.06, y:cy+Math.sin(a)*r*0.94});
   }
-  return pts;
+  return {poly:pts, featA:featA, waistA:wA};
 }
+/* archetype id -> hard shape kind */
+var SHAPE_OF={gentle:'kidney',steep:'crescent',tier:'peanut',ridge:'hourglass',
+  bowl:'clover',sbreak:'dogleg',pinch:'pinch',lag:'quad',tiny:'comma'};
 function inPoly(px,py,poly){
   var inside=false;
   for(var i=0,j=poly.length-1;i<poly.length;j=i++){
@@ -164,22 +229,49 @@ function inPoly(px,py,poly){
   return inside;
 }
 
+/* a hard elevation drop: a smoothstep step of height s (feet) over a
+   transition width w (feet), centered on the line through (px,py) with
+   unit normal (nx,ny). C1-smooth but steep -- dramatic fall-off, never a
+   cliff, so the numeric gradient (and the hillshade drawn from it) stays
+   honest. High side is where (x-px)*nx+(y-py)*ny > 0. */
+function stepField(s,w,px,py,nx,ny){
+  return function(x,y){
+    var dd=(x-px)*nx+(y-py)*ny;
+    return s*smoothstep(0.5+dd/w);
+  };
+}
+function addFields(){
+  var fs=arguments, n=fs.length;
+  return function(x,y){var t=0;for(var i=0;i<n;i++)t+=fs[i](x,y);return t;};
+}
+function tiltField(s,tA){
+  return function(x,y){return s*(x*Math.cos(tA)+y*Math.sin(tA));};
+}
+
 /* Build one green. rng is seeded. */
 function buildGreen(rng,archId){
   var A=null;
   for(var i=0;i<ARCHES.length;i++)if(ARCHES[i].id===archId)A=ARCHES[i];
   var R=A.R[0]+rng()*(A.R[1]-A.R[0]);
-  var waist=(archId==='pinch')?0.34:0;
-  var poly=blobPoly(rng,0,0,R,waist);
+  var kind=SHAPE_OF[archId];
+  /* Hourglass: pick the putt axis FIRST, then force the waist across it,
+     so the two bulbs sit under ball and cup and the putt MUST cross the
+     narrow neck. */
+  var preA=(kind==='hourglass')?rng()*Math.PI*2:null;
+  var sp=shapePoly(rng,0,0,R,kind,preA);
+  var poly=sp.poly, featA=sp.featA;
   /* EDGE STARTS: the ball opens near the edge of the green and the cup
      sits roughly across from it, so every opening putt is long and
-     crosses the green's features. Both verified inside the boundary,
-     cup kept 2.5ft clear of the edge. */
+     crosses the green's features. The ball angle is biased onto the
+     shape's feature axis, so the strategy faces the putt. Both verified
+     inside the boundary, cup kept 2.5ft clear of the edge. */
   var wantD=A.dMin+rng()*(A.dMax-A.dMin);
   var ball=null,cup=null;
   function tryPair(wd){
     for(var k=0;k<600;k++){
-      var a=rng()*Math.PI*2;
+      var a;
+      if(preA!=null)a=preA+(rng()-0.5)*0.3;
+      else a=featA+(rng()<0.5?0:Math.PI)+(rng()-0.5)*0.6;
       var br=R*(0.76+rng()*0.14);            /* 76-90% of radius: near the edge */
       var bx=br*Math.cos(a), by=br*Math.sin(a);
       var ca=a+Math.PI+(rng()-0.5)*1.1;       /* cup roughly across the green */
@@ -201,74 +293,92 @@ function buildGreen(rng,archId){
   var d=dist2(ball.x,ball.y,cup.x,cup.y);
   var lineA=Math.atan2(cup.y-ball.y,cup.x-ball.x);
 
-  /* height field per archetype (feet of elevation) */
-  var h,tA=rng()*Math.PI*2,s,bunk=null;
+  /* Height fields: bold elevation with HARD DROPS -- steep tiers, sharp
+     downhill runs, real fall-off sections. Every drop is a smoothstep
+     (C1-smooth, never a cliff), so the numeric gradient and the
+     hillshade drawn from it stay honest: what you see IS what breaks
+     the putt. No sand: greens are pure putting surface. */
+  var h,tA=rng()*Math.PI*2,s;
+  var ux=(cup.x-ball.x)/d, uy=(cup.y-ball.y)/d;   /* putt direction */
+  var pnx=-uy, pny=ux;                            /* lateral */
+  var sg1=(rng()<0.5)?1:-1;                       /* random high side */
   if(archId==='gentle'){
-    s=0.008+rng()*0.006;
-    h=(function(s,tA){return function(x,y){return s*(x*Math.cos(tA)+y*Math.sin(tA));};})(s,tA);
+    /* kidney: gentle tilt + a hard fall-off shelf just past the cup --
+       blow it past and you're down the drop */
+    var dr=5+rng()*2;
+    h=addFields(tiltField(0.008+rng()*0.006,rng()*Math.PI*2),
+      stepField(0.22+rng()*0.10,2.2+rng()*0.8,
+        cup.x+ux*dr,cup.y+uy*dr,-ux,-uy));
   }else if(archId==='steep'){
-    s=0.028+rng()*0.012;
-    tA=lineA+Math.PI/2+(rng()-0.5)*0.9;
-    h=(function(s,tA){return function(x,y){return s*(x*Math.cos(tA)+y*Math.sin(tA));};})(s,tA);
+    /* crescent: side slope + a hard tier across the middle of the putt */
+    var mx0=(ball.x+cup.x)/2, my0=(ball.y+cup.y)/2;
+    h=addFields(tiltField(0.028+rng()*0.012,lineA+Math.PI/2+(rng()-0.5)*0.9),
+      stepField(0.20+rng()*0.10,2.5+rng()*1.0,mx0,my0,sg1*ux,sg1*uy));
   }else if(archId==='tier'){
-    s=0.10+rng()*0.08; var w=5+rng()*3;
-    var lx=ball.x+(cup.x-ball.x)*0.45, ly=ball.y+(cup.y-ball.y)*0.45;
-    var nx=-(cup.y-ball.y)/d, ny=(cup.x-ball.x)/d;
-    h=(function(s,w,lx,ly,nx,ny){return function(x,y){
-      var dd=(x-lx)*nx+(y-ly)*ny;
-      return s*smoothstep(0.5+dd/w);
-    };})(s,w,lx,ly,nx,ny);
+    /* peanut: DOUBLE hard tier across the putt -- three distinct
+       levels to climb or descend */
+    var lx1=ball.x+(cup.x-ball.x)*0.35, ly1=ball.y+(cup.y-ball.y)*0.35;
+    var lx2=ball.x+(cup.x-ball.x)*0.65, ly2=ball.y+(cup.y-ball.y)*0.65;
+    h=addFields(
+      stepField(0.14+rng()*0.08,2.5+rng()*1.0,lx1,ly1,sg1*ux,sg1*uy),
+      stepField(0.12+rng()*0.08,2.5+rng()*1.0,lx2,ly2,sg1*ux,sg1*uy),
+      tiltField(0.004,rng()*Math.PI*2));
   }else if(archId==='ridge'){
-    s=0.5+rng()*0.25; var w2=4+rng()*3;
-    var mx=(ball.x+cup.x)/2, my=(ball.y+cup.y)/2;
-    var nx2=(cup.x-ball.x)/d, ny2=(cup.y-ball.y)/d;
-    h=(function(s,w2,mx,my,nx2,ny2){return function(x,y){
-      var dd=(x-mx)*nx2+(y-my)*ny2;
-      return s*Math.exp(-(dd*dd)/(w2*w2));
-    };})(s,w2,mx,my,nx2,ny2);
+    /* hourglass: SHARP crest across the neck -- steep fall-off both
+       sides, the putt must cross it or die */
+    var s2=0.60+rng()*0.25, w2=2.2+rng()*0.8;
+    var mx2=(ball.x+cup.x)/2, my2=(ball.y+cup.y)/2;
+    h=(function(s2,w2,mx2,my2,ux,uy){return function(x,y){
+      var dd=(x-mx2)*ux+(y-my2)*uy;
+      return s2*Math.exp(-(dd*dd)/(w2*w2));
+    };})(s2,w2,mx2,my2,ux,uy);
   }else if(archId==='bowl'){
-    /* depression centered at (not exactly on) the cup: everything feeds
-       toward the hole, with a whisper of break to read. Low point at the
-       geometric center confused players -- chevrons pointed away from
-       the hole even though they were true downhill. */
-    s=0.55+rng()*0.3;
+    /* clover: bowl feeding the cup + a hard approach step to climb */
     var ba=rng()*Math.PI*2, bd=2+rng()*2.5;
     var bcx=cup.x+Math.cos(ba)*bd, bcy=cup.y+Math.sin(ba)*bd;
-    h=(function(s,R,bcx,bcy){return function(x,y){
-      var dx=x-bcx,dy=y-bcy;
-      var r=Math.sqrt(dx*dx+dy*dy)/R; return s*r*r;
-    };})(s,R,bcx,bcy);
+    var lx3=ball.x+(cup.x-ball.x)*0.35, ly3=ball.y+(cup.y-ball.y)*0.35;
+    h=addFields(
+      (function(s2,R,bcx,bcy){return function(x,y){
+        var dx=x-bcx,dy=y-bcy;
+        var r=Math.sqrt(dx*dx+dy*dy)/R; return s2*r*r;
+      };})(0.55+rng()*0.3,R,bcx,bcy),
+      stepField(0.16+rng()*0.08,2.5+rng()*1.0,lx3,ly3,sg1*ux,sg1*uy));
   }else if(archId==='sbreak'){
-    s=0.022+rng()*0.014;
+    /* dogleg: S-break wiggle + a hard tier across the middle of the putt */
     var W=R*1.6, rot=rng()*Math.PI;
     var ca=Math.cos(rot),sa=Math.sin(rot);
-    h=(function(s,W,ca,sa){return function(x,y){
-      var u=x*ca+y*sa, v=-x*sa+y*ca;
-      return s*v*Math.sin(Math.PI*u/W);
-    };})(s,W,ca,sa);
+    var mx3=(ball.x+cup.x)/2, my3=(ball.y+cup.y)/2;
+    h=addFields(
+      (function(s2,W,ca,sa){return function(x,y){
+        var u=x*ca+y*sa, v=-x*sa+y*ca;
+        return s2*v*Math.sin(Math.PI*u/W);
+      };})(0.022+rng()*0.014,W,ca,sa),
+      stepField(0.18+rng()*0.10,2.5+rng()*1.0,mx3,my3,sg1*ux,sg1*uy));
   }else if(archId==='pinch'){
-    s=0.007+rng()*0.005;
-    tA=lineA+(rng()-0.5)*0.8;
-    var bmx=(ball.x+cup.x)/2, bmy=(ball.y+cup.y)/2;
-    var px2=-(cup.y-ball.y)/d, py2=(cup.x-ball.x)/d;
-    var off=4.5+rng()*2;
-    bunk=[
-      {x:bmx+px2*off, y:bmy+py2*off, rx:3.2, ry:5.2, rot:Math.atan2(py2,px2)},
-      {x:bmx-px2*off, y:bmy-py2*off, rx:3.2, ry:5.2, rot:Math.atan2(py2,px2)}
-    ];
-    h=(function(s,tA){return function(x,y){return s*(x*Math.cos(tA)+y*Math.sin(tA));};})(s,tA);
+    /* pinch: tilt + a small hard shelf past the middle */
+    var lx4=ball.x+(cup.x-ball.x)*0.55, ly4=ball.y+(cup.y-ball.y)*0.55;
+    h=addFields(tiltField(0.007+rng()*0.005,lineA+(rng()-0.5)*0.8),
+      stepField(0.12+rng()*0.06,3.0,lx4,ly4,sg1*ux,sg1*uy));
   }else if(archId==='lag'){
-    s=0.006+rng()*0.004; /* kept gentle: a 45ft dead-uphill putt at 1.4%
-      was only makeable on a knife-edge (n=87 + 15% extra mark) */
-    h=(function(s,tA){return function(x,y){return s*(x*Math.cos(tA)+y*Math.sin(tA));};})(s,tA);
+    /* quad: the long run FALLS away -- a sustained downhill feed plus a
+       hard little drop just above the cup. Die it at the top and let
+       gravity do the work. */
+    var dropD=3+rng()*2;
+    var lx5=cup.x-ux*dropD, ly5=cup.y-uy*dropD;
+    h=addFields(
+      (function(ux2,uy2,bx,by){return function(x,y){
+        return -0.020*((x-bx)*ux2+(y-by)*uy2);};})(ux,uy,ball.x,ball.y),
+      stepField(0.15+rng()*0.05,3+rng()*1,lx5,ly5,-ux,-uy));
   }else{ /* tiny */
-    s=0.014+rng()*0.010;
-    h=(function(s,tA){return function(x,y){return s*(x*Math.cos(tA)+y*Math.sin(tA));};})(s,tA);
+    /* comma: micro-tier -- small green, sharp little step */
+    var mx4=(ball.x+cup.x)/2, my4=(ball.y+cup.y)/2;
+    h=addFields(tiltField(0.014+rng()*0.010,tA),
+      stepField(0.10+rng()*0.06,1.8+rng()*0.7,mx4,my4,sg1*ux,sg1*uy));
   }
   var xs=poly.map(function(p){return p.x;}),ys=poly.map(function(p){return p.y;});
   return {
     arch:archId, name:A.name, R:R, poly:poly, ball:ball, cup:cup,
-    dist:d, lineA:lineA, h:h, bunkers:bunk||[],
+    dist:d, lineA:lineA, h:h,
     par:(d>=38?3:2), /* par 3 on long greens, par 2 standard */
     bbox:{x0:Math.min.apply(null,xs),x1:Math.max.apply(null,xs),
           y0:Math.min.apply(null,ys),y1:Math.max.apply(null,ys)},
@@ -297,7 +407,7 @@ function simulate(green,aimA,powerM,opts){
   var x=sx,y=sy;
   var vx=Math.cos(aimA)*v0,vy=Math.sin(aimA)*v0;
   var jrng=mulberry32(green.seed^0x9e37);
-  var trail=[],maxBreak=0,lipped=false,steps=0,offGreen=false,plugged=false;
+  var trail=[],maxBreak=0,lipped=false,steps=0,offGreen=false;
   /* break measured against the putt's own start line, not the tee line */
   var refA=(opts.from)?Math.atan2(green.cup.y-sy,green.cup.x-sx):green.lineA;
   var lineX=Math.cos(refA),lineY=Math.sin(refA);
@@ -316,19 +426,11 @@ function simulate(green,aimA,powerM,opts){
     if(lat>maxBreak)maxBreak=lat;
     if(trail.length===0||dist2(x,y,trail[trail.length-1].x,trail[trail.length-1].y)>0.8)
       trail.push({x:x,y:y});
-    var bk=green.bunkers;
-    for(var b=0;b<bk.length;b++){
-      var c=Math.cos(bk[b].rot),s2=Math.sin(bk[b].rot);
-      var ex=x-bk[b].x,ey=y-bk[b].y;
-      var lu=ex*c+ey*s2,lv=-ex*s2+ey*c;
-      if((lu*lu)/(bk[b].rx*bk[b].rx)+(lv*lv)/(bk[b].ry*bk[b].ry)<1){plugged=true;vx=vy=0;}
-    }
-    if(plugged)break;
     if(!inPoly(x,y,green.poly)){offGreen=true;break;}
     var dc=dist2(x,y,green.cup.x,green.cup.y);
     var spd=Math.sqrt(vx*vx+vy*vy);
     if(dc<cupR){
-      if(spd<vCap)return{holed:true,x:x,y:y,trail:trail,maxBreak:maxBreak,lipped:lipped,offGreen:false,plugged:false};
+      if(spd<vCap)return{holed:true,x:x,y:y,trail:trail,maxBreak:maxBreak,lipped:lipped,offGreen:false};
       lipped=true;
       var nx3=(x-green.cup.x)/(dc||1),ny3=(y-green.cup.y)/(dc||1);
       var dot=vx*nx3+vy*ny3;
@@ -337,10 +439,10 @@ function simulate(green,aimA,powerM,opts){
       vy=(vy-1.6*dot*ny3)*0.62+(nx3)*jit;
       x=green.cup.x+nx3*(cupR+0.05);y=green.cup.y+ny3*(cupR+0.05);
     }else if(dc<cupR*2.2&&spd<vCap*0.55){
-      return{holed:true,x:green.cup.x,y:green.cup.y,trail:trail,maxBreak:maxBreak,lipped:lipped,offGreen:false,plugged:false};
+      return{holed:true,x:green.cup.x,y:green.cup.y,trail:trail,maxBreak:maxBreak,lipped:lipped,offGreen:false};
     }
   }
-  return{holed:false,x:x,y:y,trail:trail,maxBreak:maxBreak,lipped:lipped,offGreen:offGreen,plugged:plugged};
+  return{holed:false,x:x,y:y,trail:trail,maxBreak:maxBreak,lipped:lipped,offGreen:offGreen};
 }
 
 /* One full stroke, pure: marker distance + aim + needle value -> outcome.
@@ -586,17 +688,6 @@ function drawGreen(green,state){
   ctx.lineJoin='round';
   ctx.strokeStyle='#2e6b33';ctx.lineWidth=Math.max(6,cam.scale*0.35);ctx.stroke();
 
-  /* bunkers */
-  for(var b=0;b<green.bunkers.length;b++){
-    var bk=green.bunkers[b],bp=w2s(bk.x,bk.y);
-    ctx.save();ctx.translate(bp.x,bp.y);ctx.rotate(bk.rot);
-    ctx.fillStyle='#e8d194';
-    ctx.beginPath();ctx.ellipse(0,0,bk.rx*cam.scale,bk.ry*cam.scale,0,0,Math.PI*2);ctx.fill();
-    ctx.fillStyle='rgba(120,90,40,0.25)';
-    ctx.beginPath();ctx.ellipse(0,0,bk.rx*cam.scale*0.7,bk.ry*cam.scale*0.7,0,0,Math.PI*2);ctx.fill();
-    ctx.restore();
-  }
-
   /* cup: big, dark, impossible to miss -- with a pulsing gold ring */
   var cp=w2s(green.cup.x,green.cup.y);
   var cupRpx=Math.max(10,CUP_R*cam.scale*1.35);
@@ -723,23 +814,25 @@ function fmtDist(ft){
   return Math.floor(inch/12)+"'"+(inch%12)+'"';
 }
 
-/* scorecard strip: per-hole strokes colored vs par; live vs-par total */
+/* scorecard strip: each tile shows PAR on top and the player's score on
+   the bottom (0 until the hole is played, then their strokes, colored
+   vs par); live vs-par total */
 function renderStrip(){
   var html='',strokes=0,parSum=0;
   for(var i=0;i<9;i++){
     var g=G.greens[i],r=G.results[i];
     var cls='scell'+(i===G.hole?' cur':'');
-    var txt='&middot;';
+    var score=0;
     if(r){
       strokes+=r.putts;parSum+=g.par;
       var d=r.putts-g.par;
       cls+=d<0?' under':(d>0?' over':' even');
-      txt=r.putts;
-    }else if(i===G.hole&&G.putts>0){
-      txt=G.putts;
+      score=r.putts;
+    }else if(i===G.hole){
+      score=G.putts; /* live count on the current hole */
     }
     html+='<div class="'+cls+'"><div class="n">'+(i+1)+'</div>'+
-      '<div class="r">'+txt+'</div><div class="d">P'+g.par+'</div></div>';
+      '<div class="p">PAR '+g.par+'</div><div class="s">'+score+'</div></div>';
   }
   scoreStrip.innerHTML=html;
   var diff=strokes-parSum;
@@ -915,8 +1008,7 @@ function settleStroke(){
   /* putt again from where it lies */
   var dft=dist2(r.x,r.y,g.cup.x,g.cup.y);
   var detail;
-  if(r.plugged)detail='PLUGGED IN THE BUNKER';
-  else if(r.offGreen)detail='OFF THE GREEN';
+  if(r.offGreen)detail='OFF THE GREEN';
   else if(r.lipped)detail='LIPPED OUT \u2014 TOO HOT';
   else{
     var proj=(r.x-rr.sx)*rr.ax+(r.y-rr.sy)*rr.ay;
@@ -1238,7 +1330,8 @@ var PuttTest={
     BAR_MAX:BAR_MAX,V_STOP:V_STOP},
   flow:{ /* driven by the render smoke test */
     G:G,startRound:startRound,doStop:doStop,settleStroke:settleStroke,
-    frame:frame,placeMarkerAt:placeMarkerAt,phaseBtn:phaseBtn
+    frame:frame,placeMarkerAt:placeMarkerAt,phaseBtn:phaseBtn,
+    renderStrip:renderStrip
   }
 };
 if(typeof module!=='undefined'&&module.exports)module.exports=PuttTest;
