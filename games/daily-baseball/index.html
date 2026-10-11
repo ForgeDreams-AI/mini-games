@@ -76,21 +76,24 @@
                 font-size:10px; font-weight:800; color:#9aa0ad; letter-spacing:.08em; }
   #meterbtn { margin:8px 0 0; padding:14px; font-size:18px; }
   .btn-swing { background:#c62f2f; color:#fff; }
-  /* spot picker: 3x3 over the behind-catcher scene (boxes vanish after the pick) */
-  #spotwrap { position:absolute; left:8px; right:8px; top:34%; background:rgba(255,255,255,.96);
-              border-radius:16px; padding:12px 12px 10px; display:none;
-              box-shadow:0 4px 18px rgba(0,0,0,.18); }
+  /* spot picker: compact 3x3 card BELOW the scene — the behind-catcher view
+     stays the hero; boxes vanish after the pick */
+  #spotwrap { background:#fff; border-radius:16px; padding:10px 10px 12px; margin:4px 0 8px;
+              display:none; box-shadow:0 2px 10px rgba(0,0,0,.06); }
   #spothead { text-align:center; font-weight:800; font-size:15px; margin:0 0 2px; color:#20242e; }
   #spotsub { text-align:center; font-size:12px; color:#6b6f7a; margin:0 0 8px; }
   #spotgrid { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; }
-  .spot { border:2px solid #e9e4d8; background:#fff; border-radius:12px; padding:14px 4px;
-          font-size:15px; font-weight:800; color:#6b6f7a; cursor:pointer; }
+  .spot { border:2px solid #e9e4d8; background:#fff; border-radius:12px; padding:0 4px;
+          min-height:48px; display:flex; flex-direction:column; align-items:center; justify-content:center;
+          font-size:14px; font-weight:800; color:#6b6f7a; cursor:pointer; }
   .spot small { display:block; font-size:10px; font-weight:600; color:#9aa0ad; margin-top:2px; }
   .spot.corner { border-color:#c62f2f; color:#c62f2f; }
   .spot:active { transform:scale(.95); border-color:#20242e; }
 
-  #gamelog { min-height:66px; font-size:14px; color:#3a3e48; }
+  #gamelog { font-size:14px; color:#3a3e48; }
   #gamelog div { padding:3px 0; border-bottom:1px dashed #e9e4d8; }
+  #gamelog div:last-child { border-bottom:none; }
+  .gamelog-card { padding:10px 14px; margin:4px 0 8px; }
   .bigresult { text-align:center; font-size:44px; font-weight:800; margin:8px 0; }
   .statgrid { display:flex; gap:10px; margin:12px 0; }
   .stat { flex:1; background:#fff; border-radius:14px; padding:12px; text-align:center;
@@ -164,11 +167,6 @@
         <p id="chiphead"><b>Choose your pitch</b></p>
         <div id="pitchchips"></div>
       </div>
-      <div id="spotwrap">
-        <p id="spothead">Pick your spot</p>
-        <p id="spotsub">corners are nasty <span style="color:#c62f2f">■</span>, middle gets crushed</p>
-        <div id="spotgrid"></div>
-      </div>
       <div id="meterwrap">
         <p class="note" style="margin:0 0 6px" id="meter-label"><b>Stop the needle in the green!</b></p>
         <div id="meter">
@@ -180,7 +178,13 @@
       </div>
     </div>
 
-    <div class="card"><div id="gamelog"></div></div>
+    <div id="spotwrap">
+      <p id="spothead">Pick your spot</p>
+      <p id="spotsub">corners are nasty <span style="color:#c62f2f">■</span>, middle gets crushed</p>
+      <div id="spotgrid"></div>
+    </div>
+
+    <div class="card gamelog-card"><div id="gamelog"></div></div>
   </div>
 
   <!-- RESULTS -->
@@ -987,7 +991,7 @@ function confirmExit(){ if(confirm('Quit this game and go home?')) location.href
 function phasePitchSelect(){
   stopMeter(); resetFieldFx(); V.phase='pitchSelect'; V.cam='catcher'; hideOverlays();
   el('chipwrap').style.display='block';
-  setHint('Choose your pitch');
+  setHint(''); /* chipwrap already carries its own "Choose your pitch" heading */
   var box=el('pitchchips'); box.innerHTML='';
   var bat=BB.currentBatter(S);
   var tierWord=bat.tier==='G'?'tough out':bat.tier==='E'?'whiffs a lot':'solid hitter';
@@ -1011,7 +1015,7 @@ var SPOTS=[
 function phaseSpotSelect(){
   stopMeter(); V.phase='spotSelect'; hideOverlays();
   el('spotwrap').style.display='block';
-  setHint('Pick your spot');
+  setHint(''); /* spotwrap already carries its own "Pick your spot" heading */
   var g=el('spotgrid'); g.innerHTML='';
   SPOTS.forEach(function(s,i){
     var b=document.createElement('button');
