@@ -48,7 +48,7 @@
 var TAB_USERS = 'users';
 
 // Game id -> score tab name (tab name = game id by convention)
-var GAME_IDS = ['daily-race', 'daily-atlas', 'daily-baseball', 'daily-putt', 'daily-challenge'];
+var GAME_IDS = ['daily-race', 'daily-atlas', 'daily-baseball', 'daily-putt', 'daily-putt-putt', 'daily-challenge'];
 
 // Which score wins per game: 'min' = lower is better (race times, putt strokes),
 // 'max' = higher is better (quiz scores, baseball encoded W/diff).
@@ -57,6 +57,7 @@ var BEST_MODE = {
   'daily-atlas': 'max',
   'daily-baseball': 'max',
   'daily-putt': 'min',
+  'daily-putt-putt': 'min',
   'daily-challenge': 'min'  // composite: pos*1e6 + timeMs (lower wins = better position, tiebreak by time)
 };
 
