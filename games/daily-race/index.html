@@ -1382,13 +1382,13 @@ document.getElementById('resultsBtn').addEventListener('click',function(){
 });
 document.getElementById('practiceBtn').addEventListener('click',function(){startRace(true);});
 document.getElementById('againBtn').addEventListener('click',function(){startRace(true);});
-document.getElementById('homeBtn').addEventListener('click',function(){location.href='..';});
-document.getElementById('hubBtn').addEventListener('click',function(){location.href='..';});
-homeHudBtn.addEventListener('click',function(){location.href='..';});
+document.getElementById('homeBtn').addEventListener('click',function(){location.href='../..';});
+document.getElementById('hubBtn').addEventListener('click',function(){location.href='../..';});
+homeHudBtn.addEventListener('click',function(){location.href='../..';});
 document.getElementById('resumeBtn').addEventListener('click',function(){
   pauseScreen.classList.add('hidden');state='racing';lastTs=performance.now();
 });
-document.getElementById('quitBtn').addEventListener('click',function(){location.href='..';});
+document.getElementById('quitBtn').addEventListener('click',function(){location.href='../..';});
 pauseBtn.addEventListener('click',function(){
   if(state==='racing'){state='paused';pauseScreen.classList.remove('hidden');}
 });

@@ -81,7 +81,7 @@
   <!-- MENU -->
   <div class="screen on" id="screen-menu">
     <div class="topbar">
-      <button class="homebtn" onclick="location.href='..'" title="All games">⌂</button>
+      <button class="homebtn" onclick="location.href='../..'" title="All games">⌂</button>
       <span class="pill" id="menu-date"></span>
       <button class="homebtn" id="btn-username" title="Player name">👤</button>
     </div>
@@ -155,7 +155,7 @@
   <!-- RESULTS -->
   <div class="screen" id="screen-results">
     <div class="topbar">
-      <button class="homebtn" onclick="location.href='..'" title="All games">⌂</button>
+      <button class="homebtn" onclick="location.href='../..'" title="All games">⌂</button>
       <span class="pill" id="done-date"></span>
       <span class="pill">FINAL</span>
     </div>
@@ -168,7 +168,7 @@
     </div>
     <div class="card"><p class="note" id="done-note"></p></div>
     <button class="btn btn-primary" id="btn-share">Share result</button>
-    <button class="btn btn-secondary" onclick="location.href='..'">⌂ All games</button>
+    <button class="btn btn-secondary" onclick="location.href='../..'">⌂ All games</button>
   </div>
 
 </div>
@@ -479,7 +479,7 @@ function startGame(mode){
   log('Play ball! Top of the 1st — you\'re pitching.');
   renderScore(); phasePitchSelect();
 }
-function confirmExit(){ if(confirm('Quit this game and go home?')) location.href='..'; }
+function confirmExit(){ if(confirm('Quit this game and go home?')) location.href='../..'; }
 
 /* ----- pitching: pick pitch ----- */
 function phasePitchSelect(){
