@@ -1,12 +1,14 @@
 /*****************************************************************
  * MINI GAMES — shared leaderboard backend (canonical multi-game)
- * Games: daily-race, daily-shape (add new games below)
+ * Games: daily-race, daily-shape, daily-baseball (add new games below)
  *
  * Tabs (auto-created on first use):
  *   users        — SHARED identity across all mini-games
  *                  username_key | display_name | phrase_hash | created_at
  *   daily-race   — scores: date | username_key | display_name | score | submitted_at
  *   daily-shape  — scores: date | username_key | display_name | score | submitted_at
+ *   daily-baseball — scores: date | username_key | display_name | score | submitted_at
+ *                  (score is encoded: W*1e6 + (diff+50)*1e4 + runsFor*100 + runsAgainst)
  *
  * ---- DEPLOY (one time, ~3 minutes) ----
  * 1. Create a Google Sheet (name it e.g. "Mini Games Leaderboard").
@@ -46,13 +48,14 @@
 var TAB_USERS = 'users';
 
 // Game id -> score tab name (tab name = game id by convention)
-var GAME_IDS = ['daily-race', 'daily-shape'];
+var GAME_IDS = ['daily-race', 'daily-shape', 'daily-baseball'];
 
 // Which score wins per game: 'min' = lower is better (race times),
-// 'max' = higher is better (quiz scores).
+// 'max' = higher is better (quiz scores, baseball encoded W/diff).
 var BEST_MODE = {
   'daily-race': 'min',
-  'daily-shape': 'max'
+  'daily-shape': 'max',
+  'daily-baseball': 'max'
 };
 
 var USERS_HEADERS = ['username_key', 'display_name', 'phrase_hash', 'created_at'];
