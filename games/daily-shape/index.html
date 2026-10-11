@@ -25,14 +25,22 @@
   .btn-primary { background:#20242e; color:#fff; }
   .btn-secondary { background:#e9e4d8; color:#20242e; }
   .btn:active { transform:scale(.98); }
+  .btn:disabled { opacity:.5; cursor:default; }
+  .btn:disabled:active { transform:none; }
+  a.btn { text-decoration:none; text-align:center; }
+  .home-top { display:flex; justify-content:flex-start; margin:2px 2px 8px; }
+  .home-top a { display:inline-block; background:#fff; border-radius:999px; padding:11px 20px;
+                font-weight:700; color:#20242e; text-decoration:none; font-size:16px;
+                box-shadow:0 2px 10px rgba(0,0,0,.06); }
+  .home-top a:active { transform:scale(.96); }
   .stats { display:flex; gap:10px; margin:12px 0; }
   .stat { flex:1; background:#fff; border-radius:14px; padding:12px; text-align:center;
           box-shadow:0 2px 10px rgba(0,0,0,.06); }
   .stat .v { font-size:24px; font-weight:800; }
   .stat .l { font-size:12px; color:#6b6f7a; margin-top:2px; }
   .screen { display:none; } .screen.on { display:block; }
-  #shapeCanvas { width:100%; height:300px; background:#fff; border-radius:18px;
-                 box-shadow:0 2px 10px rgba(0,0,0,.06); display:block; }
+  #shapeImg { width:100%; height:300px; object-fit:contain; background:#fff; border-radius:18px;
+              box-shadow:0 2px 10px rgba(0,0,0,.06); display:block; }
   .topbar { display:flex; justify-content:space-between; align-items:center; margin:6px 2px 12px; }
   .topbar .pill { background:#fff; border-radius:999px; padding:8px 16px; font-weight:700;
                   box-shadow:0 2px 10px rgba(0,0,0,.06); font-size:15px; }
@@ -67,6 +75,7 @@
 
   <!-- MENU -->
   <div id="screen-menu" class="screen on">
+    <div class="home-top"><a href="..">⌂ All games</a></div>
     <h1>🌍 Daily Shape</h1>
     <p class="sub">30 countries. Shape only. How many can you name?</p>
     <div class="stats">
@@ -79,18 +88,25 @@
       <button class="btn btn-secondary" id="btn-practice">Practice (random 30)</button>
       <button class="btn btn-secondary" id="btn-board">🏆 Leaderboard</button>
     </div>
+    <div class="card" id="daily-lock" style="display:none">
+      <p class="sub" style="margin-bottom:4px">🔒 Today's challenge is done — come back at midnight</p>
+      <div class="big-score" id="daily-lock-score" style="font-size:34px">–</div>
+      <p class="note" style="margin-top:6px">Next challenge in <b id="daily-countdown">–</b></p>
+    </div>
     <button class="tiny-link" id="btn-name">Set / switch player name</button>
     <p class="note" id="menu-note"></p>
   </div>
 
   <!-- GAME -->
   <div id="screen-game" class="screen">
+    <div class="home-top"><a href="..">⌂ All games</a></div>
     <div class="topbar">
       <div class="pill" id="game-round">1/30</div>
       <div class="pill" id="game-mode">DAILY</div>
+      <div class="pill" id="game-lives">❤❤❤</div>
       <div class="pill" id="game-score">0 ✅</div>
     </div>
-    <canvas id="shapeCanvas" width="640" height="600"></canvas>
+    <img id="shapeImg" alt="Country terrain relief">
     <div id="options" style="margin-top:12px;"></div>
   </div>
 
@@ -104,6 +120,7 @@
       <button class="btn btn-primary" id="btn-share">📤 Share result</button>
       <button class="btn btn-secondary" id="btn-board2">🏆 Leaderboard</button>
       <button class="btn btn-secondary" id="btn-menu">Menu</button>
+      <a class="btn btn-secondary" href="..">⌂ All games</a>
     </div>
     <p class="note" id="done-note"></p>
   </div>
@@ -167,12 +184,14 @@ function shareText(dateStr,results){
 var LS='dailyshape.v1', ULS='dailyshape.user';
 function loadStats(){try{return JSON.parse(localStorage.getItem(LS))||{};}catch(e){return{};}}
 function saveStats(s){try{localStorage.setItem(LS,JSON.stringify(s));}catch(e){}}
-function recordDaily(dateStr,score){
+function recordDaily(dateStr,score,completed){
   var s=loadStats();
   if(s.lastPlayed===dateStr) return {replay:true,best:s.best||0,streak:s.streak||0};
   var y=new Date(); y.setDate(y.getDate()-1);
   var streak=(s.lastPlayed===todayStr(y))?(s.streak||0)+1:1;
-  var ns={best:Math.max(s.best||0,score),streak:streak,lastPlayed:dateStr};
+  // best only counts fully completed 30-round runs
+  var best=(completed===false)?(s.best||0):Math.max(s.best||0,score);
+  var ns={best:best,streak:streak,lastPlayed:dateStr};
   saveStats(ns);
   return {replay:false,best:ns.best,streak:ns.streak};
 }
@@ -207,23 +226,29 @@ function submitDaily(dateStr,score){
 }
 
 /* ================= rendering ================= */
-function drawCountry(canvas,idx){
-  var c=COUNTRIES[idx];
-  var ctx=canvas.getContext('2d');
-  var W=canvas.width,H=canvas.height;
-  ctx.clearRect(0,0,W,H);
-  var mnx=1e9,mxx=-1e9,mny=1e9,mxy=-1e9,i,j,p,poly;
-  for(i=0;i<c.p.length;i++){poly=c.p[i];for(j=0;j<poly.length;j++){p=poly[j];
-    if(p[0]<mnx)mnx=p[0]; if(p[0]>mxx)mxx=p[0]; if(p[1]<mny)mny=p[1]; if(p[1]>mxy)mxy=p[1];}}
-  var pad=30;
-  var s=Math.min((W-2*pad)/((mxx-mnx)||1),(H-2*pad)/((mxy-mny)||1));
-  var cx=(mnx+mxx)/2, cy=(mny+mxy)/2;
-  ctx.fillStyle='#20242e';
-  for(i=0;i<c.p.length;i++){poly=c.p[i];ctx.beginPath();
-    for(j=0;j<poly.length;j++){p=poly[j];
-      var x=W/2+(p[0]-cx)*s, y=H/2-(p[1]-cy)*s;
-      if(j)ctx.lineTo(x,y);else ctx.moveTo(x,y);}
-    ctx.closePath();ctx.fill();}
+function countrySlug(n){
+  return n.toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/_+/g,'_').replace(/^_|_$/g,'');
+}
+function showRelief(idx){
+  el('shapeImg').src='relief/'+countrySlug(COUNTRIES[idx].n)+'.jpg';
+  el('shapeImg').alt='Terrain of '+COUNTRIES[idx].n;
+}
+
+/* ================= one-shot daily ================= */
+var DLS='dailyshape.lastDaily', DSS='dailyshape.lastDailyScore';
+function lsGet(k){try{return localStorage.getItem(k);}catch(e){return null;}}
+function lsSet(k,v){try{localStorage.setItem(k,v);}catch(e){}}
+function dailyLocked(){return lsGet(DLS)===todayStr();}
+function msToMidnight(){var n=new Date();var m=new Date(n);m.setHours(24,0,0,0);return m-n;}
+function fmtCountdown(ms){
+  var s=Math.max(0,Math.floor(ms/1000));
+  var h=Math.floor(s/3600),m=Math.floor(s%3600/60),ss=s%60;
+  return h+'h '+String(m).padStart(2,'0')+'m '+String(ss).padStart(2,'0')+'s';
+}
+function tickLock(){
+  if(!el('screen-menu').classList.contains('on'))return;
+  if(!dailyLocked()){ if(el('daily-lock').style.display!=='none')refreshMenu(); return; }
+  var c=el('daily-countdown'); if(c)c.textContent=fmtCountdown(msToMidnight());
 }
 
 /* ================= screens ================= */
@@ -239,18 +264,35 @@ function refreshMenu(){
   el('stat-streak').textContent=s.streak||0;
   el('stat-name').textContent=u?u.display:'?';
   el('menu-note').textContent=LEADERBOARD_URL?'':'Leaderboard not connected yet — scores stay on this device.';
-  var playedToday=s.lastPlayed===todayStr();
-  el('btn-daily').textContent=playedToday?'▶ Play today again (practice run)':"▶ Play today's challenge";
+  var locked=dailyLocked(), db=el('btn-daily');
+  db.disabled=locked;
+  db.textContent=locked?'🔒 Done for today':"▶ Play today's challenge";
+  var lock=el('daily-lock');
+  lock.style.display=locked?'':'none';
+  if(locked){
+    var sc=lsGet(DSS);
+    el('daily-lock-score').textContent=(sc===null?'–':sc+'/30');
+    el('daily-countdown').textContent=fmtCountdown(msToMidnight());
+  }
 }
 function startGame(mode){
+  if(mode==='daily'&&dailyLocked()){refreshMenu();show('screen-menu');return;}
   var date=todayStr();
   var set,seedLabel;
   if(mode==='daily'){set=dailySet(date);seedLabel='DAILY';}
   else{var r=mulberry32((Math.random()*1e9)|0);set=seededShuffle(COUNTRIES.map(function(_,i){return i;}),r).slice(0,30);seedLabel='PRACTICE';}
-  G={mode:mode,date:date,set:set,round:0,score:0,results:[],locked:false,submitted:false};
+  G={mode:mode,date:date,set:set,round:0,score:0,results:[],locked:false,submitted:false,
+     lives:(mode==='daily'?3:Infinity)};
   el('game-mode').textContent=seedLabel;
+  el('game-lives').style.display=(mode==='daily'?'':'none');
+  updateLives();
   show('screen-game');
   nextRound();
+}
+function updateLives(){
+  if(G.mode!=='daily')return;
+  var l=Math.max(0,G.lives);
+  el('game-lives').textContent='❤'.repeat(l)+'🖤'.repeat(3-l);
 }
 function nextRound(){
   if(G.round>=30){finishGame();return;}
@@ -259,7 +301,7 @@ function nextRound(){
   var opts=roundOptions(G.mode==='daily'?G.date:'practice|'+Date.now(),G.round,correct);
   el('game-round').textContent=(G.round+1)+'/30';
   el('game-score').textContent=G.score+' ✅';
-  drawCountry(el('shapeCanvas'),correct);
+  showRelief(correct);
   var box=el('options'); box.innerHTML='';
   opts.forEach(function(ci){
     var b=document.createElement('button');
@@ -271,6 +313,7 @@ function nextRound(){
 function answer(btn,hit,correct){
   if(G.locked)return; G.locked=true;
   G.results.push(hit); if(hit)G.score++;
+  if(!hit&&G.mode==='daily'){G.lives--;updateLives();}
   el('game-score').textContent=G.score+' ✅';
   var btns=el('options').children;
   for(var i=0;i<btns.length;i++){
@@ -278,21 +321,31 @@ function answer(btn,hit,correct){
     if(btns[i].textContent===COUNTRIES[correct].n)btns[i].classList.add('correct');
   }
   if(!hit)btn.classList.add('wrong');
-  setTimeout(function(){G.round++;nextRound();},hit?450:900);
+  setTimeout(function(){
+    if(G.mode==='daily'&&G.lives<=0){finishGame(false);return;}
+    G.round++;nextRound();
+  },hit?450:900);
 }
-function finishGame(){
+function finishGame(won){
+  won=(won!==false);
   var s=loadStats();
   if(G.mode==='daily'){
-    var rec=recordDaily(G.date,G.score);
-    el('done-title').textContent="Today's challenge";
-    el('done-note').textContent=rec.replay?'Already played today — this run was just for fun.':'Saved! Come back tomorrow to keep your streak.';
+    var rec=recordDaily(G.date,G.score,won);
+    lsSet(DLS,G.date); lsSet(DSS,String(G.score));
+    if(won){
+      el('done-title').textContent="Today's challenge";
+      el('done-note').textContent=rec.replay?'Already played today — this run was just for fun.':'Saved! Come back tomorrow to keep your streak.';
+    }else{
+      el('done-title').textContent='💀 Out of lives';
+      el('done-note').textContent='You used all 3 lives — that counts as today\'s run. Come back at midnight.';
+    }
     maybeSubmit();
   }else{
     el('done-title').textContent='Practice round';
     el('done-note').textContent='Practice never touches your stats or the leaderboard.';
     el('done-rank').textContent=''; el('done-rank-sub').textContent='';
   }
-  el('done-score').textContent=G.score+'/30';
+  el('done-score').textContent=G.score+'/'+G.results.length;
   show('screen-done');
 }
 function maybeSubmit(){
@@ -409,6 +462,9 @@ document.addEventListener('DOMContentLoaded',function(){
     if(navigator.share){navigator.share({text:t}).catch(function(){});}
     else if(navigator.clipboard){navigator.clipboard.writeText(t).then(function(){el('btn-share').textContent='✅ Copied!';});}
   };
+  setInterval(tickLock,1000);
+  document.addEventListener('visibilitychange',function(){if(!document.hidden)refreshMenu();});
+  window.addEventListener('focus',function(){refreshMenu();});
   refreshMenu();
 });
 </script>
