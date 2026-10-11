@@ -88,6 +88,9 @@
     text-transform: uppercase; }
   .row { display: flex; gap: 10px; margin-top: 6px; }
   .row .btn { width: 150px; font-size: 16px; padding: 13px; margin: 10px 0 0; }
+  .modeRow { display: flex; gap: 8px; justify-content: center; margin: 12px 0 4px; }
+  .modeRow .btn { width: 160px; font-size: 14px; padding: 12px 8px; margin: 0; letter-spacing: 1px; }
+  .modeRow .btn.sel { background: #fbbf24; border-color: #7c4a03; box-shadow: 0 5px 0 #7c4a03; }
   #shareMsg { margin-top: 10px; font-size: 13px; color: #22c55e; min-height: 18px; }
   .flag { font-size: 12px; letter-spacing: 3px; text-transform: uppercase; color: #f59e0b; margin-top: 6px; }
   /* ---------- results / leaderboard ---------- */
@@ -131,8 +134,12 @@
   <div id="count" class="hidden"></div>
 
   <div id="startScreen" class="overlay">
-    <h1 class="title">&#127937; DAILY RACE</h1>
+    <h1 class="title" id="modeTitle">&#127937; DAILY RACE</h1>
     <p class="subtitle" id="dateLine"></p>
+    <div class="modeRow">
+      <button class="btn modeBtn sel" id="modeRaceBtn">DAILY RACE</button>
+      <button class="btn modeBtn" id="modeChBtn">DAILY CHALLENGE</button>
+    </div>
     <div class="stats">
       <div class="stat"><div class="k">Best today</div><div class="v" id="bestToday">--</div></div>
       <div class="stat"><div class="k">Streak</div><div class="v" id="streakLine">&#128293;0</div></div>
@@ -583,6 +590,211 @@ function msToMidnight(nowMs){var d=new Date(nowMs);d.setHours(24,0,0,0);return d
 function fmtCountdown(ms){var s=Math.max(0,Math.floor(ms/1000));
   var h=Math.floor(s/3600),m=Math.floor((s%3600)/60),ss=s%60;
   return h+':'+('0'+m).slice(-2)+':'+('0'+ss).slice(-2);}
+
+/* ================= DAILY CHALLENGE CORE (closed-loop circuit, AI field) ================= */
+var CH_LAPS=3, CH_CAR_HALF_W=8, CH_TRACK_W=80, CH_AI=5;
+function generateChallengeTrack(seedStr){
+  var rng=mulberry32(xmur3(seedStr)());
+  var feats=[{type:'straight',len:15+Math.floor(rng()*5),turn:0}];
+  /* Feature set for visual variety (all eased except straights — no curvature
+     discontinuities, Anthony hates sharp corners):
+     - loop: tight 270° curl (r≈200), the signature visible loop
+     - soft90: flowing 90° (r≈700)
+     - sweeper: gentle bend */
+  var mid=[['soft90',18+Math.floor(rng()*5),90],
+           ['straight',14+Math.floor(rng()*5),0],
+           ['loop',15+Math.floor(rng()*4),270],
+           ['straight',14+Math.floor(rng()*5),0]];
+  if(rng()<0.65){
+    mid.splice(2+Math.floor(rng()*2),0,['sweeper',18+Math.floor(rng()*5),115+rng()*45]);
+  }
+  for(var d=0;d<mid.length;d++)feats.push({type:mid[d][0],len:mid[d][1],turn:mid[d][2]});
+  var turnSum=0,f;
+  for(f=0;f<feats.length;f++)turnSum+=feats[f].turn;
+  var k=360/turnSum;
+  /* integrate the feature walk -> control points. Factored as a function so the
+     straight lengths can be optimized for loop closure (turns stay exact). */
+  function buildLoop(){
+    var cpx=[0],cpy=[0],hd=0,s,ff;
+    for(ff=0;ff<feats.length;ff++){
+      var ft=feats[ff],total=ft.turn*Math.PI/180*k,n=ft.len,w=[],ws=0;
+      for(s=0;s<n;s++){
+        var t=n<=1?0:s/(n-1),e;
+        if(ft.type==='straight')e=1;
+        else{e=t<0.3?t/0.3:(t>0.7?(1-t)/0.3:1);e=e*e*(3-2*e);}
+        w.push(e);ws+=e;
+      }
+      for(s=0;s<n;s++){
+        hd+=total*(w[s]/ws);
+        cpx.push(cpx[cpx.length-1]+Math.sin(hd)*SEG_LEN);
+        cpy.push(cpy[cpy.length-1]-Math.cos(hd)*SEG_LEN);
+      }
+    }
+    var N=cpx.length-1;
+    var gx=cpx[N]-cpx[0],gy=cpy[N]-cpy[0];
+    return {cpx:cpx,cpy:cpy,N:N,gap:Math.sqrt(gx*gx+gy*gy),gx:gx,gy:gy};
+  }
+  /* coordinate descent on straight lengths: keep every turn EXACT (soft90 stays
+     90°, loop stays 270°) and let the connector straights absorb the closure.
+     Deterministic — no RNG here, so same seed -> same track. */
+  var built=buildLoop(),improved=true,iter=0;
+  while(improved&&iter++<40){
+    improved=false;
+    for(f=0;f<feats.length;f++){
+      if(feats[f].type!=='straight')continue;
+      for(var dl=-2;dl<=2;dl+=4){
+        feats[f].len+=dl;
+        if(feats[f].len<4){feats[f].len-=dl;continue;}
+        var cand=buildLoop();
+        if(cand.gap<built.gap-1){built=cand;improved=true;}
+        else feats[f].len-=dl;
+      }
+    }
+  }
+  var cpx=built.cpx,cpy=built.cpy,N=built.N,gx=built.gx,gy=built.gy;
+  for(var i=0;i<=N;i++){cpx[i]-=gx*i/N;cpy[i]-=gy*i/N;}
+  var pts=[],s;
+  for(s=0;s<N;s++){
+    var a=(s-1+N)%N,b=(s+1)%N,c2=(s+2)%N;
+    for(var q2=0;q2<SAMPLES;q2++){
+      var t2=q2/SAMPLES;
+      pts.push({x:catmull(cpx[a],cpx[s],cpx[b],cpx[c2],t2),
+                y:catmull(cpy[a],cpy[s],cpy[b],cpy[c2],t2),
+                w:CH_TRACK_W,hd:0,zone:0});
+    }
+  }
+  var L=pts.length,p0,p1;
+  for(i=0;i<L;i++){
+    p0=pts[(i-1+L)%L];p1=pts[(i+1)%L];
+    pts[i].hd=Math.atan2(p1.x-p0.x,-(p1.y-p0.y));
+  }
+  var all=[];
+  for(var lap=0;lap<CH_LAPS;lap++)for(i=0;i<L;i++)all.push(pts[i]);
+  all.push({x:pts[0].x,y:pts[0].y,w:CH_TRACK_W,hd:pts[0].hd,zone:0});
+  return {pts:all,NS:all.length,lapLen:L,finishSeg:3*L,loop:pts,
+          oils:[],boosts:[],traffic:[],checkpoints:[],challenge:true,seed:seedStr,
+          closureGap:Math.sqrt(gx*gx+gy*gy),ctrlSegs:N};
+}
+
+/* ---- stepCar with challenge extensions (backward compatible):
+   cap = optional top-speed cap (AI); car.halfW overrides CAR_HALF_W;
+   tr.lapLen>0 => closed-circuit finish at tr.finishSeg. Sets car.finishT. */
+var _qd={d:0,cx:0,cy:0,t:0};
+function stepChallengeCar(tr,car,inp,dt,t,cap){
+  if(car.finished)return;
+  var steerIn=clamp(inp.steer,-1,1);
+  car.steerSm+=(steerIn-car.steerSm)*Math.min(1,dt*10);
+  var effMax=(cap===undefined)?MAXV:Math.min(MAXV,cap);
+  if(t<car.boostUntil)effMax=MAXV*1.4;
+  if(t<car.stallUntil){car.speed=0;}
+  else{
+    if(car.speed<effMax){
+      car.speed+=(ACCEL*(1.05-car.speed/effMax))*dt;
+      if(car.speed>effMax)car.speed=effMax;
+    }
+    if(car.speed>effMax)car.speed=effMax;
+  }
+  if(car.speed<0)car.speed=0;
+  var speedFrac=Math.min(car.speed/MAXV,1);
+  var turnAuth=TURNSPD*(1.25-0.6*speedFrac);
+  car.hd+=car.steerSm*turnAuth*dt;
+  car.x+=Math.sin(car.hd)*car.speed*dt;
+  car.y-=Math.cos(car.hd)*car.speed*dt;
+  var q=queryTrack(tr,car.x,car.y,car.seg);
+  if(q.seg>car.seg)car.seg=q.seg;
+  var hw=car.halfW||CAR_HALF_W;
+  var maxLat=q.w/2-hw-2;
+  if(q.lat>maxLat||q.lat<-maxLat){
+    var sgn=q.lat>0?1:-1;
+    var nx=Math.cos(q.hd),ny=Math.sin(q.hd);
+    car.x=q.cx+nx*sgn*maxLat;
+    car.y=q.cy+ny*sgn*maxLat;
+    /* reflect velocity across the track tangent (vector math, no angle hacks) */
+    var dx=Math.sin(car.hd),dy=-Math.cos(car.hd);
+    var tx=Math.sin(q.hd),ty=-Math.cos(q.hd);
+    var dot=dx*tx+dy*ty;
+    car.hd=Math.atan2(2*dot*tx-dx,-(2*dot*ty-dy));
+    /* inward bumper kick: rotate the reflected heading slightly off the wall.
+       Without this the guide assist (below) eases the heading back to the tangent,
+       which points INTO the wall wherever the track curves — a stable soft-lock
+       (proven: 30/30 no-input cars wedged forever, no steering input could escape). */
+    car.hd-=sgn*WALL_KICK;
+    car.speed*=(car.wallKeep||BOUNCE_KEEP);
+    car.bounced=true;
+    car.guideUntil=t+0.4;
+  }
+  if(t<car.guideUntil)car.hd+=normAng(q.hd-car.hd)*Math.min(1,dt*6);
+  var finNeed=tr.lapLen?tr.finishSeg-8:tr.NS*0.9;
+  if(car.seg>finNeed){
+    var fp0=tr.pts[tr.finishSeg-1],fp1=tr.pts[tr.finishSeg];
+    var fdx=fp1.x-fp0.x,fdy=fp1.y-fp0.y,fl=Math.sqrt(fdx*fdx+fdy*fdy)||1;
+    if(((car.x-fp0.x)*fdx+(car.y-fp0.y)*fdy)/fl>=fl-8){
+      if(!car.finished){car.finished=true;car.finishT=t;}
+    }
+  }
+}
+
+/* ---- AI ---- */
+function makeChallengeAI(tr,rng){
+  var colors=['#ef4444','#f59e0b','#a855f7','#22c55e','#eab308'];
+  var ai=[];
+  for(var i=0;i<CH_AI;i++){
+    ai.push({slot:i,laneOff:(rng()*2-1)*22,pace:0.82+rng()*0.08,
+             wob:rng()*6.283,color:colors[i%colors.length],car:null});
+  }
+  return ai;
+}
+function gridChallengeCar(tr,seg,lat,halfW){
+  var p=tr.pts[Math.min(seg,tr.NS-1)];
+  var c=createCar(tr);
+  c.x=p.x+Math.cos(p.hd)*lat;c.y=p.y+Math.sin(p.hd)*lat;
+  c.hd=p.hd;c.seg=seg;c.halfW=halfW||CAR_HALF_W;
+  if(halfW===CH_CAR_HALF_W)c.wallKeep=0.7; /* challenge: walls bite a bit more than classic */
+  return c;
+}
+function challengeAIInput(tr,car,ai,t){
+  var look=Math.floor(10+car.speed/MAXV*12);
+  var ti=Math.min(car.seg+look,tr.NS-1);
+  var tp=tr.pts[ti];
+  var desLat=ai.laneOff+Math.sin(t*0.7+ai.wob)*4;
+  var dx=tp.x+Math.cos(tp.hd)*desLat-car.x;
+  var dy=tp.y+Math.sin(tp.hd)*desLat-car.y;
+  var desHd=Math.atan2(dx,-dy);
+  return {steer:clamp(normAng(desHd-car.hd)*2.5,-1,1)};
+}
+function challengeAICap(tr,car,ai,playerSeg){
+  var mc=0,hi=Math.min(car.seg+26,tr.NS-2),s;
+  for(s=Math.max(0,car.seg+4);s<hi;s++){
+    var dh=Math.abs(normAng(tr.pts[s+1].hd-tr.pts[s].hd));
+    if(dh>mc)mc=dh;
+  }
+  var curv=mc/(SEG_LEN/SAMPLES);
+  var vAllow=Math.sqrt(2400/Math.max(curv,1e-6));
+  var cap=Math.min(ai.pace*MAXV,vAllow);
+  var gapU=(car.seg-playerSeg)*(SEG_LEN/SAMPLES);
+  if(gapU>700)cap*=0.96;else if(gapU<-700)cap*=1.04;
+  return cap;
+}
+function bumpChallengeCars(cars){
+  for(var i=0;i<cars.length;i++)for(var j=i+1;j<cars.length;j++){
+    var a=cars[i],b=cars[j];
+    var dx=b.x-a.x,dy=b.y-a.y,d2=dx*dx+dy*dy,R=17;
+    if(d2<R*R&&d2>0.01){
+      var d=Math.sqrt(d2),push=(R-d)/2,nx=dx/d,ny=dy/d;
+      a.x-=nx*push;a.y-=ny*push;b.x+=nx*push;b.y+=ny*push;
+      a.speed*=0.985;b.speed*=0.985;   /* jostle, not a wreck: contact is a nuisance, not a race-ender */
+    }
+  }
+}
+function challengePositions(cars){
+  return cars.slice().sort(function(a,b){
+    if(a.finished&&b.finished)return a.finishT-b.finishT;
+    if(a.finished)return -1;
+    if(b.finished)return 1;
+    return b.seg-a.seg;
+  });
+}
+
 /*__CORE_END__*/
 /* ================= APP ================= */
 (function(){
@@ -859,6 +1071,26 @@ function showStart(){
   resultScreen.classList.add('hidden');pauseScreen.classList.add('hidden');startScreen.classList.remove('hidden');
   var ds=dateStr(),s=load();
   document.getElementById('dateLine').textContent=prettyDate(ds)+" — today's track is the same for everyone";
+  // mode-specific best and lock
+  if(mode==='challenge'){
+    var cday=loadChallengeDay(ds);
+    document.getElementById('bestToday').textContent=cday?('P'+cday.pos+' '+fmt(cday.best*1000)):'--';
+    document.getElementById('streakLine').textContent='\uD83D\uDD25'+(s.streak.count||0);
+    // show challenge track behind (generate but don't start)
+    track=generateChallengeTrack('challenge-'+ds);
+    car=gridChallengeCar(track,10,-20,CH_CAR_HALF_W);
+    if(lockTimer){clearInterval(lockTimer);lockTimer=null;}
+    if(getLastChallengeDaily()===ds){
+      playBtn.style.display='none';lockBox.classList.remove('hidden');
+      lockTime.textContent=cday?('P'+cday.pos+' '+fmt(cday.best*1000)):'--';
+      lockTier.textContent='CHALLENGE COMPLETE';lockTier.className='';
+      updateLockCount();
+      lockTimer=setInterval(updateLockCount,1000);
+    }else{
+      playBtn.style.display='block';lockBox.classList.add('hidden');
+    }
+    return;
+  }
   var day=s.days[ds];
   document.getElementById('bestToday').textContent=day&&day.best?fmt(day.best):'--';
   document.getElementById('streakLine').textContent='\uD83D\uDD25'+(s.streak.count||0);
@@ -908,6 +1140,186 @@ function startRace(isPractice){
   }
   tick();
 }
+/* ================= DAILY CHALLENGE APP LAYER ================= */
+var mode='race'; // 'race' | 'challenge'
+var chAI=[], chCars=[], chPlayer=null, chFinishedCount=0;
+var CH_GAME_ID='daily-challenge';
+
+function setMode(m){
+  mode=m;
+  document.getElementById('modeRaceBtn').classList.toggle('sel',m==='race');
+  document.getElementById('modeChBtn').classList.toggle('sel',m==='challenge');
+  document.getElementById('modeTitle').innerHTML = m==='challenge'?'&#127937; DAILY CHALLENGE':'&#127937; DAILY RACE';
+  // update best today display for the mode
+  var ds=dateStr(),s=load();
+  var key=m==='challenge'?'dailychallenge':'dailyrace';
+  var day=s.days[ds+':'+key]||s.days[ds]; // fallback for migration
+  // Actually use separate storage: prefix the date
+  var cday=loadChallengeDay(ds);
+  document.getElementById('bestToday').textContent =
+    m==='challenge'?(cday&&cday.best?fmtPos(cday.pos)+' '+fmt(cday.best):'--')
+                   :(day&&day.best?fmt(day.best):'--');
+}
+
+function loadChallengeDay(ds){
+  try{
+    var s=JSON.parse(localStorage.getItem('dailychallenge.days')||'{}');
+    return s[ds]||null;
+  }catch(e){return null;}
+}
+function saveChallengeDay(ds,pos,time){
+  try{
+    var s=JSON.parse(localStorage.getItem('dailychallenge.days')||'{}');
+    var cur=s[ds];
+    if(!cur||pos<cur.pos||(pos===cur.pos&&time<cur.best)){
+      s[ds]={pos:pos,best:time};
+    }
+    localStorage.setItem('dailychallenge.days',JSON.stringify(s));
+  }catch(e){}
+}
+function getLastChallengeDaily(){
+  try{return localStorage.getItem('dailychallenge.last')||'';}catch(e){return '';}
+}
+function setLastChallengeDaily(ds){
+  try{localStorage.setItem('dailychallenge.last',ds);}catch(e){}
+}
+
+function fmtPos(p){return 'P'+p;}
+
+function startChallenge(isPractice){
+  var ds=dateStr();
+  if(!isPractice&&getLastChallengeDaily()===ds){showStart();return;}
+  if(lockTimer){clearInterval(lockTimer);lockTimer=null;}
+  practice=isPractice;
+  mode='challenge';
+  seedUsed=isPractice?('challenge-practice-'+Date.now()+'-'+Math.floor(Math.random()*1e9)):('challenge-'+ds);
+  // generate challenge track
+  track=generateChallengeTrack(seedUsed);
+  // create AI field (date-seeded via seedUsed)
+  var rng=mulberry32(xmur3(seedUsed+'-ai')());
+  chAI=makeChallengeAI(track,rng);
+  chCars=[];
+  // player starts P4 (seg 10)
+  chPlayer=gridChallengeCar(track,10,-20,CH_CAR_HALF_W);
+  chPlayer.speed=MAXV*LAUNCH_SPD;
+  chPlayer.isPlayer=true;
+  chPlayer.color='#38bdf8';
+  chCars.push(chPlayer);
+  car=chPlayer; // reuse for camera/render
+  // AI grid: P1,P2,P3,P5,P6
+  var aiSegs=[25,20,15,5,0];
+  for(var i=0;i<chAI.length;i++){
+    var seg=aiSegs[i],lat=(i%2===0?-20:20);
+    var c=gridChallengeCar(track,seg,lat,CH_CAR_HALF_W);
+    c.speed=MAXV*LAUNCH_SPD;
+    c.aiRef=chAI[i];chAI[i].car=c;
+    c.color=chAI[i].color;
+    chCars.push(c);
+  }
+  chFinishedCount=0;
+  raceT=0;
+  startScreen.classList.add('hidden');resultScreen.classList.add('hidden');
+  hud.classList.remove('hidden');pauseBtn.style.display='block';homeHudBtn.style.display='block';
+  touchL.style.display='block';touchR.style.display='block';
+  refreshSteer();
+  steerHint.style.opacity='1';
+  state='countdown';
+  var seq=['3','2','1','GO!'],i=0;
+  countEl.classList.remove('hidden');
+  function tick(){
+    if(state!=='countdown')return;
+    countEl.textContent=seq[i];
+    countEl.style.color=i===3?'#22c55e':'#fff';
+    if(++i<seq.length){setTimeout(tick,750);}
+    else{setTimeout(function(){
+      if(state!=='countdown')return;
+      countEl.classList.add('hidden');state='racing';
+      if(hintTimer)clearTimeout(hintTimer);
+      hintTimer=setTimeout(function(){steerHint.style.opacity='0';},3500);
+    },700);}
+  }
+  tick();
+}
+
+function stepChallenge(dt){
+  // step all cars
+  for(var i=0;i<chCars.length;i++){
+    var c=chCars[i];
+    if(c.finished)continue;
+    var inp,cap;
+    if(c.isPlayer){
+      inp=input; // {steer} from keyboard/touch
+      cap=undefined;
+    }else{
+      inp=challengeAIInput(track,c,c.aiRef,raceT);
+      cap=challengeAICap(track,c,c.aiRef,chPlayer.seg);
+    }
+    stepChallengeCar(track,c,inp,dt,raceT,cap);
+    if(c.finished){
+      chFinishedCount++;
+    }
+  }
+  bumpChallengeCars(chCars);
+  // check if player finished -> end race (or wait for all? end when player finishes)
+  if(chPlayer.finished&&state==='racing'){
+    finishChallenge();
+  }
+}
+
+function challengePlayerPos(){
+  var order=challengePositions(chCars);
+  for(var i=0;i<order.length;i++){
+    if(order[i].isPlayer)return i+1;
+  }
+  return 6;
+}
+
+function finishChallenge(){
+  state='finished';
+  var pos=challengePlayerPos();
+  var time=chPlayer.finishT;
+  if(!practice){
+    setLastChallengeDaily(dateStr());
+    saveChallengeDay(dateStr(),pos,time);
+    // leaderboard: composite score = pos*1e6 + timeMs (lower wins)
+    var score=Math.round(pos*1e6+time*1000);
+    submitScore(CH_GAME_ID,score,{pos:pos,time:time});
+  }
+  pauseBtn.style.display='none';homeHudBtn.style.display='none';
+  touchL.style.display='none';touchR.style.display='none';
+  showChallengeResults(pos,time);
+}
+
+function showChallengeResults(pos,time){
+  resultScreen.classList.remove('hidden');
+  hud.classList.add('hidden');
+  document.getElementById('resTitle').textContent='🏁 P'+pos+' FINISH!';
+  document.getElementById('resTime').textContent=fmt(time*1000);
+  var tierNames={1:'POLE',2:'FRONT ROW',3:'PODIUM',4:'POINTS',5:'MIDFIELD',6:'BACKMARKER'};
+  var tn=tierNames[pos]||'FINISHER';
+  var resTier=document.getElementById('resTier');
+  resTier.textContent=tn;resTier.className=tierClass(tn);
+  document.getElementById('resRank').textContent=practice?'Practice — not scored':'Daily Challenge scored!';
+  document.getElementById('newBest').classList.add('hidden');
+  document.getElementById('practiceFlag').classList.toggle('hidden',!practice);
+  // standings
+  var order=challengePositions(chCars);
+  var html='<div class="secTitle">Standings</div><div class="lbList">';
+  for(var i=0;i<order.length;i++){
+    var c=order[i];
+    var nm=c.isPlayer?'YOU (cyan)':('AI '+(chCars.indexOf(c)));
+    var tm=c.finished?fmt(c.finishT*1000):'DNF';
+    html+='<div class="lbRow"><span>P'+(i+1)+'</span><span>'+nm+'</span><span>'+tm+'</span></div>';
+  }
+  html+='</div>';
+  document.getElementById('resBest').textContent='P'+pos;
+  // Append standings after the stats (simple approach: replace share button area temporarily)
+  // For now, just show position and time; full standings in results screen later
+}
+
+// Hook into the main loop: called from loop() when mode==='challenge'
+// Hook into render(): skip lane lines when mode==='challenge', draw AI cars
+
 function finishRace(){
   state='finished';
   if(car)boomConfetti(car.x,car.y);
@@ -1262,6 +1674,7 @@ function render(){
     ctx.stroke();
   }
 
+  if(mode!=='challenge'){
   /* dashed lane divider lines — lanes step down by zone: 4 -> 3 -> 2 */
   ctx.strokeStyle='rgba(240,245,252,0.40)';ctx.lineWidth=3;ctx.setLineDash([20,22]);
   var lrun=0;
@@ -1287,6 +1700,7 @@ function render(){
   ctx.beginPath();ctx.moveTo(pts[0].x,pts[0].y);
   for(i=1;i<NS;i++)ctx.lineTo(pts[i].x,pts[i].y);
   ctx.stroke();ctx.setLineDash([]);
+  } /* end skip lanes in challenge */
 
   /* start + finish checkers */
   var s0=pts[0],sf=pts[NS-1];
@@ -1408,9 +1822,31 @@ function render(){
     ctx.fillRect(cf.x,cf.y,cw2,2);
   }
 
+  /* challenge: draw all 6 cars in world space (50% smaller) */
+  if(mode==='challenge'&&chCars.length){
+    for(var ci=0;ci<chCars.length;ci++){
+      var cc=chCars[ci];
+      if(!inR(cc.x,cc.y))continue;
+      ctx.save();ctx.translate(cc.x,cc.y);ctx.rotate(cc.hd);
+      /* car body: 16 wide x 24 long (50% of classic 32x48) */
+      ctx.fillStyle='#000';ctx.fillRect(-9,-13,18,26); // shadow/outline
+      ctx.fillStyle=cc.color||'#38bdf8';ctx.fillRect(-8,-12,16,24);
+      /* windshield */
+      ctx.fillStyle='rgba(0,0,0,0.35)';ctx.fillRect(-6,-8,12,6);
+      /* player marker: cyan chevron above */
+      if(cc.isPlayer){
+        ctx.fillStyle='#22d3ee';
+        ctx.beginPath();ctx.moveTo(-7,-16);ctx.lineTo(7,-16);ctx.lineTo(0,-10);ctx.closePath();ctx.fill();
+      }
+      ctx.restore();
+    }
+  }
+
   /* back to screen space: the car, always pointing straight up */
   ctx.setTransform(1,0,0,1,0,0);
-  drawCarScreen();
+  if(mode!=='challenge'){
+    drawCarScreen();
+  }
   /* oil-slow cue */
   if(car&&state==='racing'&&raceT>=car.spinUntil&&raceT<car.slowUntil){
     ctx.fillStyle='rgba(251,191,36,0.95)';
@@ -1426,7 +1862,18 @@ function loop(ts){
   requestAnimationFrame(loop);
   var dt=Math.min((ts-lastTs)/1000||0,0.05);lastTs=ts;
   if(state==='racing'&&track&&car){
-    if(hitStopT>0){
+    if(mode==='challenge'){
+      /* Daily Challenge: step all 6 cars (player + 5 AI) */
+      acc+=dt;
+      var n=0;
+      while(acc>=FIXED&&n<MAXSTEPS){
+        raceT+=FIXED;
+        stepChallenge(FIXED);
+        acc-=FIXED;n++;
+        if(chPlayer.finished)break;
+      }
+      if(n===MAXSTEPS)acc=0;
+    }else if(hitStopT>0){
       /* hit-stop: freeze the sim for ~90ms so the crash lands. acc is NOT fed during
          the freeze, so no steps pile up or get shed — the sim stays identical on
          60Hz and 120Hz phones. */
@@ -1468,16 +1915,25 @@ function loop(ts){
     }
     var totalMs=raceT*1000;
     timerEl.textContent=fmt(totalMs);
-    var pct=Math.round(100*car.seg/track.finishSeg);
-    pfill.style.width=pct+'%';
-    var z=track.pts[Math.min(car.seg,track.NS-1)].zone;
-    zoneEl.textContent=ZONE_NAMES[z]+'  \u00B7  '+pct+'%';
-    zoneEl.className='z'+(z+1);
-    /* boost HUD: countable power — the bar shows exactly how much boost is left */
-    var bRem=car.boostUntil-raceT;
-    if(bRem>0){boostHud.classList.remove('hidden');boostBar.style.width=Math.max(0,100*bRem/BOOST_DUR)+'%';}
-    else boostHud.classList.add('hidden');
-    if(car.finished)finishRace();
+    if(mode==='challenge'){
+      var pos=challengePlayerPos();
+      var lap=Math.min(CH_LAPS,Math.floor(chPlayer.seg/track.lapLen)+1);
+      pfill.style.width=Math.round(100*chPlayer.seg/track.finishSeg)+'%';
+      zoneEl.textContent='P'+pos+'  \u00B7  LAP '+lap+'/'+CH_LAPS;
+      zoneEl.className='';
+      boostHud.classList.add('hidden');
+    }else{
+      var pct=Math.round(100*car.seg/track.finishSeg);
+      pfill.style.width=pct+'%';
+      var z=track.pts[Math.min(car.seg,track.NS-1)].zone;
+      zoneEl.textContent=ZONE_NAMES[z]+'  \u00B7  '+pct+'%';
+      zoneEl.className='z'+(z+1);
+      /* boost HUD: countable power — the bar shows exactly how much boost is left */
+      var bRem=car.boostUntil-raceT;
+      if(bRem>0){boostHud.classList.remove('hidden');boostBar.style.width=Math.max(0,100*bRem/BOOST_DUR)+'%';}
+      else boostHud.classList.add('hidden');
+    }
+    if(car.finished&&mode!=='challenge')finishRace();
   }
   var ci;
   for(ci=confetti.length-1;ci>=0;ci--){var ccf=confetti[ci];
@@ -1489,14 +1945,23 @@ function loop(ts){
 
 /* ---------- buttons ---------- */
 document.getElementById('playBtn').addEventListener('click',function(){
-  if(lbOn()&&!getUser())openName(function(){startRace(false);});
-  else startRace(false);
+  if(mode==='challenge'){
+    if(lbOn()&&!getUser())openName(function(){startChallenge(false);});
+    else startChallenge(false);
+  }else{
+    if(lbOn()&&!getUser())openName(function(){startRace(false);});
+    else startRace(false);
+  }
 });
+document.getElementById('modeRaceBtn').addEventListener('click',function(){setMode('race');showStart();});
+document.getElementById('modeChBtn').addEventListener('click',function(){setMode('challenge');showStart();});
 document.getElementById('resultsBtn').addEventListener('click',function(){
   if(lbOn()&&!getUser())openName(openResults);
   else openResults();
 });
-document.getElementById('practiceBtn').addEventListener('click',function(){startRace(true);});
+document.getElementById('practiceBtn').addEventListener('click',function(){
+  if(mode==='challenge')startChallenge(true);else startRace(true);
+});
 document.getElementById('againBtn').addEventListener('click',function(){startRace(true);});
 document.getElementById('homeBtn').addEventListener('click',function(){location.href='../..';});
 document.getElementById('hubBtn').addEventListener('click',function(){location.href='../..';});
