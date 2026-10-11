@@ -36,6 +36,13 @@
   #zone.z1 { border-color: #22c55e; color: #22c55e; }
   #zone.z2 { border-color: #eab308; color: #eab308; }
   #zone.z3 { border-color: #ef4444; color: #ef4444; }
+  /* Daily Challenge: big unmissable live position badge */
+  #posBadge { position: absolute; top: calc(64px + env(safe-area-inset-top)); left: 12px; z-index: 6;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 40px; font-weight: 900;
+    color: #fff; background: rgba(5,8,14,.62); border: 2px solid #38bdf8; border-radius: 14px;
+    padding: 2px 14px; letter-spacing: 1px; text-shadow: 0 0 14px rgba(56,189,248,.7);
+    pointer-events: none; display: none; }
+  #posBadge.p1 { border-color: #fbbf24; color: #fbbf24; text-shadow: 0 0 14px rgba(251,191,36,.8); }
   #boostHud { margin-top: 6px; }
   #boostTxt { font-size: 13px; font-weight: 900; letter-spacing: 3px; color: #4ade80;
     text-shadow: 0 0 12px rgba(74,222,128,.8); }
@@ -128,6 +135,7 @@
   </div>
   <button id="pauseBtn" aria-label="Pause">&#10074;&#10074;</button>
   <button id="homeHudBtn" aria-label="All games">&#8962;</button>
+  <div id="posBadge">P4</div>
   <div id="steerHint">&#9664; HOLD LEFT / RIGHT TO STEER &#9654;</div>
   <div id="touchL" class="touchInd">&#9664;</div>
   <div id="touchR" class="touchInd">&#9654;</div>
@@ -595,65 +603,51 @@ function fmtCountdown(ms){var s=Math.max(0,Math.floor(ms/1000));
 var CH_LAPS=3, CH_CAR_HALF_W=8, CH_TRACK_W=80, CH_AI=5;
 function generateChallengeTrack(seedStr){
   var rng=mulberry32(xmur3(seedStr)());
-  var feats=[{type:'straight',len:15+Math.floor(rng()*5),turn:0}];
-  /* Feature set for visual variety (all eased except straights — no curvature
-     discontinuities, Anthony hates sharp corners):
-     - loop: tight 270° curl (r≈200), the signature visible loop
-     - soft90: flowing 90° (r≈700)
-     - sweeper: gentle bend */
-  var mid=[['soft90',18+Math.floor(rng()*5),90],
-           ['straight',14+Math.floor(rng()*5),0],
-           ['loop',15+Math.floor(rng()*4),270],
-           ['straight',14+Math.floor(rng()*5),0]];
-  if(rng()<0.65){
-    mid.splice(2+Math.floor(rng()*2),0,['sweeper',18+Math.floor(rng()*5),115+rng()*45]);
-  }
-  for(var d=0;d<mid.length;d++)feats.push({type:mid[d][0],len:mid[d][1],turn:mid[d][2]});
-  var turnSum=0,f;
-  for(f=0;f<feats.length;f++)turnSum+=feats[f].turn;
-  var k=360/turnSum;
-  /* integrate the feature walk -> control points. Factored as a function so the
-     straight lengths can be optimized for loop closure (turns stay exact). */
-  function buildLoop(){
-    var cpx=[0],cpy=[0],hd=0,s,ff;
-    for(ff=0;ff<feats.length;ff++){
-      var ft=feats[ff],total=ft.turn*Math.PI/180*k,n=ft.len,w=[],ws=0;
-      for(s=0;s<n;s++){
-        var t=n<=1?0:s/(n-1),e;
-        if(ft.type==='straight')e=1;
-        else{e=t<0.3?t/0.3:(t>0.7?(1-t)/0.3:1);e=e*e*(3-2*e);}
-        w.push(e);ws+=e;
-      }
-      for(s=0;s<n;s++){
-        hd+=total*(w[s]/ws);
-        cpx.push(cpx[cpx.length-1]+Math.sin(hd)*SEG_LEN);
-        cpy.push(cpy[cpy.length-1]-Math.cos(hd)*SEG_LEN);
-      }
-    }
-    var N=cpx.length-1;
-    var gx=cpx[N]-cpx[0],gy=cpy[N]-cpy[0];
-    return {cpx:cpx,cpy:cpy,N:N,gap:Math.sqrt(gx*gx+gy*gy),gx:gx,gy:gy};
-  }
-  /* coordinate descent on straight lengths: keep every turn EXACT (soft90 stays
-     90°, loop stays 270°) and let the connector straights absorb the closure.
-     Deterministic — no RNG here, so same seed -> same track. */
-  var built=buildLoop(),improved=true,iter=0;
-  while(improved&&iter++<40){
-    improved=false;
-    for(f=0;f<feats.length;f++){
-      if(feats[f].type!=='straight')continue;
-      for(var dl=-2;dl<=2;dl+=4){
-        feats[f].len+=dl;
-        if(feats[f].len<4){feats[f].len-=dl;continue;}
-        var cand=buildLoop();
-        if(cand.gap<built.gap-1){built=cand;improved=true;}
-        else feats[f].len-=dl;
-      }
+  /* "Wiggly stadium" circuit by 180° rotational symmetry: build HALF the track
+     with net ±180° of turning, then append the half rotated 180° about the
+     half's midpoint. rot180 maps start<->end exactly, so the circuit closes BY
+     CONSTRUCTION — no optimizer, no shear. The half starts/ends with a straight,
+     so the P0 joint is straight-to-straight (continuous curvature).
+     Half layout (net +180° for mirror=1): straight / chicane(+90° S-curve) /
+     straight / 180° hairpin "loop" (tight U-turn — the signature loop, two per
+     lap via symmetry) / straight / chicane(-90° S-curve) / straight.
+     The out/back straights are separated by the hairpin diameter (~800u), so
+     the gentle chicanes can never cause a self-intersection. All turns eased:
+     no curvature discontinuities. */
+  var mirror=rng()<0.5?-1:1;
+  var half=[
+    {type:'straight',len:5+Math.floor(rng()*3),turn:0},
+    {type:'chicane', len:8+Math.floor(rng()*4),turn:mirror*90},
+    {type:'straight',len:4+Math.floor(rng()*3),turn:0},
+    {type:'chicane', len:8+Math.floor(rng()*4),turn:-mirror*90},
+    {type:'straight',len:4+Math.floor(rng()*3),turn:0},
+    {type:'hairpin', len:8+Math.floor(rng()*4),turn:mirror*180},
+    {type:'straight',len:4+Math.floor(rng()*3),turn:0},
+    {type:'chicane', len:8+Math.floor(rng()*4),turn:-mirror*90},
+    {type:'straight',len:4+Math.floor(rng()*3),turn:0},
+    {type:'chicane', len:8+Math.floor(rng()*4),turn:mirror*90},
+    {type:'straight',len:5+Math.floor(rng()*3),turn:0}
+  ];
+  function easedW(n){var w=[],ws=0,s;for(s=0;s<n;s++){var t=n<=1?0:s/(n-1),e;
+    if(t<0.3)e=t/0.3;else if(t>0.7)e=(1-t)/0.3;else e=1;e=e*e*(3-2*e);w.push(e);ws+=e;}
+    return{w:w,ws:ws};}
+  var hx=[0],hy=[0],hd=0,f,s;
+  for(f=0;f<half.length;f++){
+    var ft=half[f],total=ft.turn*Math.PI/180,ew=easedW(ft.len);
+    for(s=0;s<ft.len;s++){
+      hd+=total*(ew.w[s]/ew.ws);
+      hx.push(hx[hx.length-1]+Math.sin(hd)*SEG_LEN);
+      hy.push(hy[hy.length-1]-Math.cos(hd)*SEG_LEN);
     }
   }
-  var cpx=built.cpx,cpy=built.cpy,N=built.N,gx=built.gx,gy=built.gy;
-  for(var i=0;i<=N;i++){cpx[i]-=gx*i/N;cpy[i]-=gy*i/N;}
-  var pts=[],s;
+  var M=hx.length-1;
+  var cx=(hx[0]+hx[M])/2,cy=(hy[0]+hy[M])/2;
+  var cpx=[],cpy=[];
+  for(s=0;s<=M;s++){cpx.push(hx[s]);cpy.push(hy[s]);}
+  /* rotated half traversed P1->P0: ascending R[1..M-1] (R[i]=rot180(H[i])) */
+  for(s=1;s<=M-1;s++){cpx.push(2*cx-hx[s]);cpy.push(2*cy-hy[s]);}
+  var N=cpx.length;
+  var pts=[];
   for(s=0;s<N;s++){
     var a=(s-1+N)%N,b=(s+1)%N,c2=(s+2)%N;
     for(var q2=0;q2<SAMPLES;q2++){
@@ -663,7 +657,7 @@ function generateChallengeTrack(seedStr){
                 w:CH_TRACK_W,hd:0,zone:0});
     }
   }
-  var L=pts.length,p0,p1;
+  var L=pts.length,p0,p1,i;
   for(i=0;i<L;i++){
     p0=pts[(i-1+L)%L];p1=pts[(i+1)%L];
     pts[i].hd=Math.atan2(p1.x-p0.x,-(p1.y-p0.y));
@@ -673,7 +667,7 @@ function generateChallengeTrack(seedStr){
   all.push({x:pts[0].x,y:pts[0].y,w:CH_TRACK_W,hd:pts[0].hd,zone:0});
   return {pts:all,NS:all.length,lapLen:L,finishSeg:3*L,loop:pts,
           oils:[],boosts:[],traffic:[],checkpoints:[],challenge:true,seed:seedStr,
-          closureGap:Math.sqrt(gx*gx+gy*gy),ctrlSegs:N};
+          closureGap:0,ctrlSegs:N};
 }
 
 /* ---- stepCar with challenge extensions (backward compatible):
@@ -739,7 +733,7 @@ function makeChallengeAI(tr,rng){
   var colors=['#ef4444','#f59e0b','#a855f7','#22c55e','#eab308'];
   var ai=[];
   for(var i=0;i<CH_AI;i++){
-    ai.push({slot:i,laneOff:(rng()*2-1)*22,pace:0.82+rng()*0.08,
+    ai.push({slot:i,laneOff:(rng()*2-1)*22,pace:0.87+rng()*0.07,
              wob:rng()*6.283,color:colors[i%colors.length],car:null});
   }
   return ai;
@@ -772,7 +766,7 @@ function challengeAICap(tr,car,ai,playerSeg){
   var vAllow=Math.sqrt(2400/Math.max(curv,1e-6));
   var cap=Math.min(ai.pace*MAXV,vAllow);
   var gapU=(car.seg-playerSeg)*(SEG_LEN/SAMPLES);
-  if(gapU>700)cap*=0.96;else if(gapU<-700)cap*=1.04;
+  if(gapU>500)cap*=0.94;else if(gapU<-500)cap*=1.07;
   return cap;
 }
 function bumpChallengeCars(cars){
@@ -807,6 +801,7 @@ var GAME_ID='daily-race';
 var canvas=document.getElementById('game'),ctx=canvas.getContext('2d');
 var hud=document.getElementById('hud'),timerEl=document.getElementById('timer'),zoneEl=document.getElementById('zone'),
     pfill=document.getElementById('pfill'),pauseBtn=document.getElementById('pauseBtn'),
+    posBadge=document.getElementById('posBadge'),
     boostHud=document.getElementById('boostHud'),boostBar=document.getElementById('boostBar'),
     steerHint=document.getElementById('steerHint'),touchL=document.getElementById('touchL'),touchR=document.getElementById('touchR'),
     countEl=document.getElementById('count'),startScreen=document.getElementById('startScreen'),resultScreen=document.getElementById('resultScreen'),
@@ -1067,6 +1062,7 @@ canvas.addEventListener('contextmenu',function(e){e.preventDefault();});
 function showStart(){
   state='start';
   hud.classList.add('hidden');pauseBtn.style.display='none';homeHudBtn.style.display='none';
+  posBadge.style.display='none';
   touchL.style.display='none';touchR.style.display='none';
   resultScreen.classList.add('hidden');pauseScreen.classList.add('hidden');startScreen.classList.remove('hidden');
   var ds=dateStr(),s=load();
@@ -1119,6 +1115,7 @@ function startRace(isPractice){
   car.speed=MAXV*LAUNCH_SPD;   /* v9: launch — the car is already moving at GO, no more sluggish start */
   startScreen.classList.add('hidden');resultScreen.classList.add('hidden');
   hud.classList.remove('hidden');pauseBtn.style.display='block';homeHudBtn.style.display='block';
+  posBadge.style.display='none';
   touchL.style.display='block';touchR.style.display='block';
   refreshSteer();
   steerHint.style.opacity='1';
@@ -1220,7 +1217,9 @@ function startChallenge(isPractice){
   raceT=0;
   startScreen.classList.add('hidden');resultScreen.classList.add('hidden');
   hud.classList.remove('hidden');pauseBtn.style.display='block';homeHudBtn.style.display='block';
+  posBadge.style.display='block';posBadge.textContent='P4';posBadge.className='';
   touchL.style.display='block';touchR.style.display='block';
+  console.log('[daily-race] Daily Challenge started — mode=challenge, seed='+seedUsed);
   refreshSteer();
   steerHint.style.opacity='1';
   state='countdown';
@@ -1257,6 +1256,16 @@ function stepChallenge(dt){
     stepChallengeCar(track,c,inp,dt,raceT,cap);
     if(c.finished){
       chFinishedCount++;
+    }else{
+      /* anti-beach watchdog: a car at a crawl for 1.5s is wedged — snap it
+         back to the centerline with a rolling start (Mario-Kart reset). Only
+         triggers when genuinely stuck; uses sim state so it stays deterministic. */
+      if(c.speed<25)c.stallT=(c.stallT||0)+dt;else c.stallT=0;
+      if(c.stallT>1.5){
+        var rq=queryTrack(track,c.x,c.y,c.seg);
+        c.x=rq.cx;c.y=rq.cy;c.hd=rq.hd;c.speed=MAXV*0.3;c.stallT=0;
+        c.guideUntil=raceT+0.5;
+      }
     }
   }
   bumpChallengeCars(chCars);
@@ -1286,6 +1295,7 @@ function finishChallenge(){
     submitScore(CH_GAME_ID,score,{pos:pos,time:time});
   }
   pauseBtn.style.display='none';homeHudBtn.style.display='none';
+  posBadge.style.display='none';
   touchL.style.display='none';touchR.style.display='none';
   showChallengeResults(pos,time);
 }
@@ -1633,7 +1643,8 @@ function render(){
   ctx.closePath();
   ctx.fillStyle=asphaltPat;ctx.fill();
 
-  /* tasteful zone tinting: whisper of the zone color on the asphalt */
+  /* tasteful zone tinting (classic only — challenge stays pure asphalt) */
+  if(mode!=='challenge'){
   var runS=0;
   for(i=1;i<=NS;i++){
     if(i===NS||pts[i].zone!==pts[runS].zone){
@@ -1653,6 +1664,7 @@ function render(){
       runS=i;
     }
   }
+  } /* end classic-only zone tint */
 
   /* red/white curbs outside the edges — alternating dashes, one stroke per color */
   ctx.lineJoin='round';ctx.lineCap='butt';
@@ -1847,8 +1859,8 @@ function render(){
   if(mode!=='challenge'){
     drawCarScreen();
   }
-  /* oil-slow cue */
-  if(car&&state==='racing'&&raceT>=car.spinUntil&&raceT<car.slowUntil){
+  /* oil-slow cue (classic only — challenge has no oil) */
+  if(mode!=='challenge'&&car&&state==='racing'&&raceT>=car.spinUntil&&raceT<car.slowUntil){
     ctx.fillStyle='rgba(251,191,36,0.95)';
     ctx.font='700 9px "Courier New",monospace';
     ctx.textAlign='center';
@@ -1921,6 +1933,8 @@ function loop(ts){
       pfill.style.width=Math.round(100*chPlayer.seg/track.finishSeg)+'%';
       zoneEl.textContent='P'+pos+'  \u00B7  LAP '+lap+'/'+CH_LAPS;
       zoneEl.className='';
+      posBadge.textContent='P'+pos;
+      posBadge.className=pos===1?'p1':'';
       boostHud.classList.add('hidden');
     }else{
       var pct=Math.round(100*car.seg/track.finishSeg);
