@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Mini Games</title>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body { margin:0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+         background:#f4f1ea; color:#20242e; min-height:100vh; }
+  .wrap { max-width:520px; margin:0 auto; padding:20px 16px 40px; }
+  h1 { text-align:center; font-size:34px; margin:18px 0 4px; }
+  .sub { text-align:center; color:#6b6f7a; margin:0 0 24px; font-size:15px; }
+  .game-card { display:block; background:#fff; border-radius:20px; padding:22px;
+               margin:14px 0; text-decoration:none; color:#20242e;
+               box-shadow:0 2px 10px rgba(0,0,0,.06); }
+  .game-card:active { transform:scale(.98); }
+  .game-card .emoji { font-size:44px; }
+  .game-card h2 { margin:10px 0 4px; font-size:24px; }
+  .game-card p { margin:0 0 14px; color:#6b6f7a; font-size:15px; }
+  .play { display:inline-block; background:#20242e; color:#fff; font-weight:700;
+          border-radius:12px; padding:12px 28px; font-size:16px; }
+  .tag { display:inline-block; font-size:12px; font-weight:700; color:#6b6f7a;
+         background:#e9e4d8; border-radius:999px; padding:4px 12px; margin-left:8px;
+         vertical-align:middle; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>🎮 Mini Games</h1>
+  <p class="sub">A new challenge every day. Same game for everyone.</p>
+
+  <a class="game-card" href="games/daily-shape/">
+    <div class="emoji">🌍</div>
+    <h2>Daily Shape</h2>
+    <p>30 mystery country silhouettes. Shape only — name them all.</p>
+    <span class="play">Play</span>
+  </a>
+
+  <a class="game-card" href="https://forgedreams-ai.github.io/daily-race/">
+    <div class="emoji">🏎️</div>
+    <h2>Daily Race <span class="tag">moving here soon</span></h2>
+    <p>Top-down daily racer. Overtake traffic, dodge the chaos, set the fastest time.</p>
+    <span class="play">Play</span>
+  </a>
+</div>
+</body>
+</html>
