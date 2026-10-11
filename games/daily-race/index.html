@@ -55,8 +55,6 @@
   #lockTier { font-size: 20px; font-weight: 900; letter-spacing: 3px; margin-top: 4px; }
   #lockCount { font-size: 20px; font-weight: 800; color: #7dd3fc; margin-top: 8px;
     font-family: "Courier New", ui-monospace, Menlo, Consolas, monospace; }
-  #penFlash { position: absolute; top: 34%; left: 0; right: 0; z-index: 7; text-align: center; pointer-events: none;
-    font-size: 26px; font-weight: 800; color: #ef4444; opacity: 0; transition: opacity .25s; }
   #steerHint { position: absolute; bottom: 22%; left: 0; right: 0; z-index: 8; text-align: center; pointer-events: none;
     font-size: 19px; font-weight: 800; letter-spacing: 2px; color: #7dd3fc; opacity: 0; transition: opacity .4s;
     text-shadow: 0 0 14px rgba(56,189,248,.6); }
@@ -127,7 +125,6 @@
   </div>
   <button id="pauseBtn" aria-label="Pause">&#10074;&#10074;</button>
   <button id="homeHudBtn" aria-label="All games">&#8962;</button>
-  <div id="penFlash">&#128165;</div>
   <div id="steerHint">&#9664; HOLD LEFT / RIGHT TO STEER &#9654;</div>
   <div id="touchL" class="touchInd">&#9664;</div>
   <div id="touchR" class="touchInd">&#9654;</div>
@@ -152,9 +149,9 @@
     <button class="btn ghost" id="resultsBtn">Results</button>
     <button class="btn ghost" id="hubBtn">&#8962; ALL GAMES</button>
     <button class="linkBtn" id="nameBtn">driver: not set</button>
-    <p class="howto"><b>Hold LEFT / RIGHT to steer</b> &mdash; your car speeds up on its own.<br>
-    <b style="color:#4ade80;">Green pads = boost.</b> Oil spins you out, barriers pop you up and stall you.<br>
-    Thread the glowing gaps, beat your best time. One scored race per day.</p>
+    <p class="howto"><b>Hold LEFT / RIGHT to steer</b> &mdash; your car launches fast on its own.<br>
+    <b style="color:#4ade80;">Green pads = boost.</b> Oil spins you out, rival cars pop you up.<br>
+    Beat your best time. One scored race per day.</p>
   </div>
 
   <div id="resultScreen" class="overlay hidden">
@@ -215,15 +212,15 @@ function clamp(v,a,b){return v<a?a:(v>b?b:v);}
 function normAng(a){while(a>Math.PI)a-=2*Math.PI;while(a<-Math.PI)a+=2*Math.PI;return a;}
 
 var SEG_LEN=90, NSEG=150, SAMPLES=4;
-var MAXV=380, ACCEL=470, TURNSPD=3.35;   /* v7: +13% top speed, nimbler steering */
+var MAXV=380, ACCEL=640, TURNSPD=3.35;   /* v9: punchy launch acceleration — the car feels fast off the line */
+var LAUNCH_SPD=0.55;                  /* v9: fraction of MAXV the car starts with at GO */
 var CAR_HALF_W=16, BOUNCE_KEEP=0.8, WALL_KICK=0.14;  /* v8: inward bumper kick off walls — a car can never wedge into a curving wall (guide assist alone eases toward the tangent, which points INTO the wall) */
-var CAR_DRAW_S=0.88, TRAFFIC_DRAW_S=1.2;/* v7: smaller player sprite, bigger traffic cars */
-var TRAFFIC_HIT_R=24;                 /* v8: hit radius matches the traffic sprite (was 30 — cars exploded with visible air between sprites) */
+var CAR_DRAW_S=0.88, TRAFFIC_DRAW_S=1.6;/* v9: much bigger traffic cars — unmistakable obstacles */
+var TRAFFIC_HIT_R=26;                 /* v9: hit radius matches the 1.6x traffic sprite */
 var LANE_W=58;                        /* road width = lane count x lane width */
 var AIR_DUR=0.8, SPIN_DUR=0.6;        /* bomb pop / oil spin durations */
 var SLOW_DUR=1.5, STALL_DUR=1.5;       /* oil slow + bomb stall, seconds */
 var BOOST_DUR=1.2;                    /* boost pad: +40% top speed for this long */
-var GAP_CARW=1.0;                     /* blocker-row gap width in car widths (Monte-Carlo tuned for ≤18% clean-pass) */
 var TRAFFIC_WOB=6;                    /* traffic wobble amplitude — always stays inside its lane */
 function lanesOfZone(z){return [4,3,2][z];}   /* 4 lanes early -> 3 -> 2 at the end */
 var ZONE_NAMES=["Easy stretch","Tight turns","Hazard zone"];
@@ -235,27 +232,54 @@ function catmull(p0,p1,p2,p3,t){
   return 0.5*((2*p1)+(-p0+p2)*t+(2*p0-5*p1+4*p2-p3)*t2+(-p0+3*p1-3*p2+p3)*t3);
 }
 
-/* ---- Track generation: coarse seeded control points -> dense Catmull-Rom centerline.
+/* ---- Track generation: courses are COMPOSED from designed curve primitives
+        (straights, sweepers, S-curves, esses) instead of random-walk noise, so every
+        daily track feels like a real race track: flowing, readable, fun.
         Fully deterministic from seedStr: same seed -> identical track on every device. ---- */
 function generateTrack(seedStr){
   var rng=mulberry32(xmur3(seedStr)());
-  var curvs=[],cx=[],cy=[],cw=[],chd=[];
-  var hd=0,target=0;
-  for(var i=0;i<NSEG;i++){
-    var zone=zoneOf(i);
-    var maxC=[0.062,0.115,0.168][zone];   /* v7: much windier */
-    var lateBoost=i>0.75*NSEG?1.2:1.0;
-    if(i<3){target=0;}
-    else{
-      target+=(rng()*2-1)*maxC*0.7;
-      target*=0.93;
-      if(zone===2&&(i%7===3)){target=((i%14===3)?1:-1)*maxC*(0.65+rng()*0.35)*lateBoost;} /* chicanes, nastier late */
-      if(hd>1.05)target-=0.04;   /* keep the course from curling into itself */
-      if(hd<-1.05)target+=0.04;
-      var cap=maxC*lateBoost;
-      if(target>cap)target=cap; if(target<-cap)target=-cap;
+  var cx=[],cy=[],cw=[],chd=[];
+  /* feature list: type + length + direction, covering all NSEG segments.
+     The opening is always a straight so the launch has room to breathe. */
+  var feats=[{type:'straight',len:15,dir:1,zone:0}],fi=15,lastDir=1;
+  while(fi<NSEG){
+    var zone=zoneOf(fi),r=rng(),type;
+    if(zone===0){type=r<0.45?'sweeper':(r<0.75?'s':'straight');}
+    else if(zone===1){type=r<0.32?'sweeper':(r<0.62?'s':(r<0.82?'esses':'straight'));}
+    else{type=r<0.35?'sweeper':(r<0.60?'s':(r<0.85?'esses':'straight'));}
+    var len=type==='straight'?10+Math.floor(rng()*10)
+          :type==='sweeper'?10+Math.floor(rng()*8)
+          :type==='s'?16+Math.floor(rng()*10)
+          :22+Math.floor(rng()*10);   /* esses */
+    if(fi+len>NSEG)len=NSEG-fi;
+    var dir=rng()<0.5?1:-1;
+    if(type!=='straight'){if(dir===lastDir)dir=-dir;lastDir=dir;}  /* alternate curve direction: flow, never curl */
+    feats.push({type:type,len:len,dir:dir,zone:zone});
+    fi+=len;
+  }
+  var CMAX=[0.055,0.095,0.135];   /* max per-segment heading change by zone: sweeping arcs, never twitchy */
+  var curvs=[],hd=0;
+  for(var f=0;f<feats.length;f++){
+    var ft=feats[f],C=CMAX[ft.zone],sgn=ft.dir;
+    if(ft.type==='sweeper'){
+      /* pick a total turn of 60-140 degrees, solve the peak curvature for it */
+      var turn=(60+rng()*80)*Math.PI/180;
+      C=Math.min(C,turn/(ft.len*0.7));
     }
-    curvs.push(target); hd+=target;
+    for(var k=0;k<ft.len;k++){
+      var t=ft.len<=1?0:k/(ft.len-1),targ=0;
+      if(ft.type==='straight'){targ=0;}
+      else if(ft.type==='sweeper'){
+        var e=t<0.25?t/0.25:(t>0.75?(1-t)/0.25:1);
+        e=e*e*(3-2*e);   /* smoothstep ramp in, hold, ramp out */
+        targ=sgn*C*e;
+      }
+      else if(ft.type==='s'){targ=sgn*C*Math.sin(t*Math.PI*2);}
+      else{targ=sgn*C*Math.sin(t*Math.PI*3);}   /* esses: 1.5 periods */
+      if(hd>1.05&&targ>0)targ-=0.05;   /* anti-curl: never wind into itself */
+      if(hd<-1.05&&targ<0)targ+=0.05;
+      curvs.push(targ);hd+=targ;
+    }
   }
   var x=0,y=0,hd2=0;
   for(var j=0;j<NSEG;j++){
@@ -268,64 +292,49 @@ function generateTrack(seedStr){
   var pts=[];
   for(var s=0;s<NSEG-1;s++){
     var a=Math.max(0,s-1),b=Math.min(NSEG-1,s+2);
-    for(var k=0;k<SAMPLES;k++){
-      var t=k/SAMPLES;
-      var px=catmull(cx[a],cx[s],cx[s+1],cx[b],t);
-      var py=catmull(cy[a],cy[s],cy[s+1],cy[b],t);
-      var pw=catmull(cw[a],cw[s],cw[s+1],cw[b],t);
+    for(var k2=0;k2<SAMPLES;k2++){
+      var t2=k2/SAMPLES;
+      var px=catmull(cx[a],cx[s],cx[s+1],cx[b],t2);
+      var py=catmull(cy[a],cy[s],cy[s+1],cy[b],t2);
+      var pw=catmull(cw[a],cw[s],cw[s+1],cw[b],t2);
       if(pw<80)pw=80;
-      var ph=chd[s]+(chd[s+1]-chd[s])*t;
+      var ph=chd[s]+(chd[s+1]-chd[s])*t2;
       pts.push({x:px,y:py,w:pw,hd:ph,zone:zoneOf(s)});
     }
   }
   pts.push({x:cx[NSEG-1],y:cy[NSEG-1],w:cw[NSEG-1],hd:chd[NSEG-1],zone:zoneOf(NSEG-1)});
   var NS=pts.length;
-  /* hazards: mild early, nasty cluster in the final ~25% — but always fair:
-     no boost pads in the blocker zone (speed + dense blockers would be unfair),
-     wide minimum gap between blockers so there's room to change sides */
-  var oils=[],boosts=[],blockers=[],lastBlockerSeg=-10;
+  /* hazards, v9: occasional oil (halved — a hazard, not the whole game) and boost
+     pads where there's room. Blocker rows REMOVED per owner — no gates. */
+  var oils=[],boosts=[];
   for(var m=3;m<NSEG;m++){
-    var z=zoneOf(m),r=rng();
+    var z=zoneOf(m),r2=rng();
     var late=m>0.75*NSEG;
-    if(z>=1&&r<(late?0.29:0.14)){oils.push({seg:Math.min(m*SAMPLES,NS-1),lat:(rng()*2-1)*0.55,r:26});}
-    else if(z>=1&&m<=0.7*NSEG&&r<0.22){boosts.push({seg:Math.min(m*SAMPLES,NS-1),lat:(rng()*2-1)*0.5,w:56});}
-    /* blocker ROWS live in the final stretch: every row spans the full road width except
-       one narrow gap (GAP_CARW car-widths). Gaps stay within the lanes — never on the road edge.
-       Min 6-seg row spacing. */
-    if(m>0.75*NSEG&&rng()<0.32&&(m-lastBlockerSeg)>=6){
-      var nl2=lanesOfZone(zoneOf(m)),halfR=nl2*LANE_W/2;
-      var gh2=(CAR_HALF_W*2*GAP_CARW)/2;
-      var gmax=halfR-gh2-20;   /* v7: wide edge margin — no blockers hugging the sides */
-      blockers.push({seg:Math.min(m*SAMPLES,NS-1),gap:(rng()*2-1)*gmax,gh:gh2,row:true});
-      lastBlockerSeg=m;
-    }
+    if(z>=1&&r2<(late?0.13:0.06)){oils.push({seg:Math.min(m*SAMPLES,NS-1),lat:(rng()*2-1)*0.55,r:26});}
+    else if(z>=1&&m<=0.7*NSEG&&r2<0.22){boosts.push({seg:Math.min(m*SAMPLES,NS-1),lat:(rng()*2-1)*0.5,w:56});}
   }
   /* AI traffic: slower cars in their lanes, denser toward the end — always dodgeable:
-     min 6-segment gaps between cars, never within 4 segments of a blocker, start area clear */
+     min 6-segment gaps between cars, start area clear */
   var traffic=[],lastTrafficSeg=-10;
   var TCOLORS=['#ef4444','#f59e0b','#a855f7','#22c55e','#eab308','#f472b6'];
   for(var tm=8;tm<NSEG-2;tm++){
     var tz=zoneOf(tm);
-    var dens=[0.26,0.41,0.55][tz];   /* v7: ~15% less traffic */
+    var dens=[0.26,0.41,0.55][tz];
     if(rng()<dens&&(tm-lastTrafficSeg)>=6){
-      var bclear=true;
-      for(var bq=0;bq<blockers.length;bq++){if(Math.abs(blockers[bq].seg-tm*SAMPLES)<4*SAMPLES){bclear=false;break;}}
-      if(bclear){
-        var nl=lanesOfZone(tz);
-        var lane=Math.floor(rng()*nl);
-        traffic.push({seg:tm*SAMPLES,lane:lane,off:(lane-(nl-1)/2)*LANE_W,
-                      speed:120+rng()*55,color:TCOLORS[Math.floor(rng()*TCOLORS.length)],
-                      wob:rng()*6.283,done:false});
-        lastTrafficSeg=tm;
-      }
+      var nl=lanesOfZone(tz);
+      var lane=Math.floor(rng()*nl);
+      traffic.push({seg:tm*SAMPLES,lane:lane,off:(lane-(nl-1)/2)*LANE_W,
+                    speed:120+rng()*55,color:TCOLORS[Math.floor(rng()*TCOLORS.length)],
+                    wob:rng()*6.283,done:false});
+      lastTrafficSeg=tm;
     }
   }
   var checkpoints=[];
   for(var c=0;c<NSEG;c+=10)checkpoints.push(Math.min(c*SAMPLES,NS-1));
-  return {pts:pts,NS:NS,oils:oils,boosts:boosts,blockers:blockers,traffic:traffic,checkpoints:checkpoints,finishSeg:NS-1};
+  return {pts:pts,NS:NS,oils:oils,boosts:boosts,traffic:traffic,checkpoints:checkpoints,finishSeg:NS-1};
 }
 
-/* scratch objects: the hot loop never allocates — ptSegDist/queryTrack/trafficXY/rowBarriers
+/* scratch objects: the hot loop never allocates — ptSegDist/queryTrack/trafficXY
    all write into these instead of returning fresh objects (60fps GC discipline on phones) */
 var _qd={d:0,cx:0,cy:0,t:0};
 function ptSegDist(px,py,ax,ay,bx,by,out){
@@ -365,25 +374,17 @@ function createCar(tr){
           stats:{pops:0,spins:0,overtakes:0},
           finished:false,popped:false,bounced:false};
 }
-/* blocker row geometry: two striped barriers flanking the gap.
-   Writes the two barrier spans {x,y,hd,len} into out (shared scratch) for rendering. */
-var _spans=[{x:0,y:0,hd:0,len:0},{x:0,y:0,hd:0,len:0}];
-function rowBarriers(tr,b,out){
-  var c=tr.pts[b.seg],H=c.w/2;
-  var ex=Math.cos(c.hd),ey=Math.sin(c.hd);
-  var o0=out[0],o1=out[1];
-  var m0=(-H+b.gap-b.gh)/2,m1=(b.gap+b.gh+H)/2;
-  o0.x=c.x+ex*m0;o0.y=c.y+ey*m0;o0.hd=c.hd;o0.len=Math.max(0,(b.gap-b.gh)-(-H));
-  o1.x=c.x+ex*m1;o1.y=c.y+ey*m1;o1.hd=c.hd;o1.len=Math.max(0,H-(b.gap+b.gh));
-  return out;
-}
-/* true when a car at lateral offset lat clips the row (must thread the gap) */
-function rowHit(b,lat){
-  return Math.abs(lat-b.gap)>b.gh-CAR_HALF_W*0.55;
+/* shockwave rings: canvas-drawn impact juice (pixel-styled expanding rings).
+   Spawned by popBomb; rendered + aged in the app layer. */
+var shockRings=[];
+function spawnRing(x,y){
+  if(shockRings.length>12)shockRings.shift();
+  shockRings.push({x:x,y:y,life:0.45,max:0.45});
 }
 /* bomb pop: the car pops into the air and STALLS — dead stop for STALL_DUR,
    then it accelerates back up. No restart, no added time penalty.
-   Invulnerability covers the whole stall so there's no chain-hitting. */
+   Invulnerability covers the whole stall so there's no chain-hitting.
+   (v9: only traffic triggers this now — blocker rows were removed.) */
 function popBomb(car,t,hd){
   car.airUntil=t+AIR_DUR;
   car.stallUntil=t+STALL_DUR;
@@ -392,6 +393,7 @@ function popBomb(car,t,hd){
   car.speed=0;
   car.popped=true;
   car.stats.pops++;
+  spawnRing(car.x,car.y);
   /* nudge back along the track tangent (not car heading) so lateral position —
      and wall containment — is preserved */
   var th=(hd===undefined)?car.hd:hd;
@@ -448,7 +450,6 @@ function stepCar(tr,car,inp,dt,t){
   car.x+=Math.sin(car.hd)*car.speed*dt;
   car.y-=Math.cos(car.hd)*car.speed*dt;
   var q=queryTrack(tr,car.x,car.y,car.seg);
-  var prevSeg=car.seg;
   if(q.seg>car.seg)car.seg=q.seg;
   /* ROAD BOUNDARY: the car can never leave the road — bounce off the edge like a bumper wall */
   var maxLat=q.w/2-CAR_HALF_W-2;
@@ -503,20 +504,15 @@ function stepCar(tr,car,inp,dt,t){
       }
     }
   }
-  /* blocker rows: judged at the exact moment you cross the barrier line —
-     thread the gap or eat a bomb pop (stall, then recover) */
-  if(t>car.invulnUntil&&t>=car.airUntil){
-    for(i=0;i<tr.blockers.length;i++){var bl=tr.blockers[i];
-      if(prevSeg<bl.seg&&q.seg>=bl.seg){
-        if(rowHit(bl,q.lat)){popBomb(car,t,q.hd);break;}
-      }
-    }
-  }
   stepTraffic(tr,car,dt,t);
-  /* finish: car reached the end of the final segment (within a few px of the finish point) */
-  var fp0=tr.pts[tr.finishSeg-1],fp1=tr.pts[tr.finishSeg];
-  var fdx=fp1.x-fp0.x,fdy=fp1.y-fp0.y,fl=Math.sqrt(fdx*fdx+fdy*fdy)||1;
-  if(((car.x-fp0.x)*fdx+(car.y-fp0.y)*fdy)/fl>=fl-8)car.finished=true;
+  /* finish: car reached the end of the final segment (within a few px of the finish point).
+     v9: the seg guard stops false finishes on loopy tracks, where the start can sit
+     "past" the finish line's projection (found by sim: one seed finished in 0.0s). */
+  if(car.seg>tr.NS*0.9){
+    var fp0=tr.pts[tr.finishSeg-1],fp1=tr.pts[tr.finishSeg];
+    var fdx=fp1.x-fp0.x,fdy=fp1.y-fp0.y,fl=Math.sqrt(fdx*fdx+fdy*fdy)||1;
+    if(((car.x-fp0.x)*fdx+(car.y-fp0.y)*fdy)/fl>=fl-8)car.finished=true;
+  }
 }
 /* ---- F1-style result tiers ---- */
 var TIERS=['POLE','FRONT ROW','PODIUM','POINTS','MIDFIELD','BACKMARKER','PIT LANE'];
@@ -565,7 +561,7 @@ var LEADERBOARD_URL='';
 var GAME_ID='daily-race';
 var canvas=document.getElementById('game'),ctx=canvas.getContext('2d');
 var hud=document.getElementById('hud'),timerEl=document.getElementById('timer'),zoneEl=document.getElementById('zone'),
-    pfill=document.getElementById('pfill'),pauseBtn=document.getElementById('pauseBtn'),penFlash=document.getElementById('penFlash'),
+    pfill=document.getElementById('pfill'),pauseBtn=document.getElementById('pauseBtn'),
     boostHud=document.getElementById('boostHud'),boostBar=document.getElementById('boostBar'),
     steerHint=document.getElementById('steerHint'),touchL=document.getElementById('touchL'),touchR=document.getElementById('touchR'),
     countEl=document.getElementById('count'),startScreen=document.getElementById('startScreen'),resultScreen=document.getElementById('resultScreen'),
@@ -780,14 +776,14 @@ var input={steer:0};
 var keys={l:false,r:false};
 var pointers={};              /* pointerId -> 'l' | 'r' */
 var holdL=false,holdR=false;
-var penTimer=null,hintTimer=null;
+var hintTimer=null;
 var dust=[],dustAcc=0;
 var shakeT=0;                 /* bomb-pop screen shake timer (artist juice) */
 var FIXED=1/120,MAXSTEPS=8;   /* fixed-step physics: the sim is identical on 60Hz and 120Hz phones */
 
 function newTrack(seed){
   track=generateTrack(seed);car=createCar(track);
-  camHd=car.hd;dust.length=0;confetti.length=0;raceT=0;
+  camHd=car.hd;dust.length=0;confetti.length=0;shockRings.length=0;raceT=0;
 }
 
 /* ---------- input: HOLD left/right half to steer (multi-touch), arrows/AD on desktop ---------- */
@@ -855,6 +851,7 @@ function startRace(isPractice){
   practice=isPractice;
   seedUsed=isPractice?('practice-'+Date.now()+'-'+Math.floor(Math.random()*1e9)):dateStr();
   newTrack(seedUsed);
+  car.speed=MAXV*LAUNCH_SPD;   /* v9: launch — the car is already moving at GO, no more sluggish start */
   startScreen.classList.add('hidden');resultScreen.classList.add('hidden');
   hud.classList.remove('hidden');pauseBtn.style.display='block';homeHudBtn.style.display='block';
   touchL.style.display='block';touchR.style.display='block';
@@ -871,6 +868,7 @@ function startRace(isPractice){
     else{setTimeout(function(){
       if(state!=='countdown')return;
       countEl.classList.add('hidden');state='racing';
+      puff(car.x-Math.sin(car.hd)*14,car.y+Math.cos(car.hd)*14,0,0,14,120,0.7,10);  /* launch dust */
       if(hintTimer)clearTimeout(hintTimer);
       hintTimer=setTimeout(function(){steerHint.style.opacity='0';},3500);
     },700);}
@@ -940,13 +938,6 @@ function finishRace(){
   document.getElementById('shareMsg').textContent='';
   resultScreen.classList.remove('hidden');
 }
-function flashPop(){
-  penFlash.textContent='\uD83D\uDCA5';
-  penFlash.style.opacity='1';
-  if(penTimer)clearTimeout(penTimer);
-  penTimer=setTimeout(function(){penFlash.style.opacity='0';},600);
-}
-
 /* ---------- pre-rendered texture tiles (built once, reused every frame) ---------- */
 var grassPat=null,asphaltPat=null;
 function makePixelTile(size,base,lite,dark,tufts){
@@ -1306,47 +1297,6 @@ function render(){
     ctx.restore();
   }
 
-  /* blocker rows: chunky pixel barriers with blocky hazard stripes */
-  for(j=0;j<track.blockers.length;j++){
-    var bl=track.blockers[j];
-    var spans=rowBarriers(track,bl,_spans);
-    for(var sp=0;sp<2;sp++){
-      var bs=spans[sp];
-      if(bs.len<8||!inR(bs.x,bs.y))continue;
-      ctx.save();ctx.translate(bs.x,bs.y);ctx.rotate(bs.hd);
-      var L=bs.len,W=26;   /* v7: chunkier barriers */
-      ctx.fillStyle='rgba(0,0,0,0.35)';ctx.fillRect(-L/2+2,-W/2+3,L,W);
-      ctx.fillStyle='#f5b301';ctx.fillRect(-L/2,-W/2,L,W);
-      ctx.fillStyle='#151a24';
-      for(var sx2=-L/2;sx2<L/2;sx2+=16){
-        var stp=Math.floor((sx2+L/2)/8)%2;
-        ctx.fillRect(sx2,-W/2+(stp?0:10),8,10);
-        ctx.fillRect(sx2,-W/2+(stp?10:0)+10,8,10);
-      }
-      ctx.fillStyle='#0c0f16';ctx.fillRect(-L/2,-W/2,L,2);ctx.fillRect(-L/2,W/2-2,L,2);
-      var blink=(Math.floor(raceT*6+j)%2===0);
-      ctx.fillStyle=blink?'#ef4444':'#7f1d1d';
-      ctx.fillRect(-3,-3,6,6);
-      ctx.restore();
-    }
-    /* gap marker: pulsing pixel chevron floating just before the gap, pointing at it —
-       the eye reads where to thread ~1s ahead, at full speed (designer requirement) */
-    var bc=track.pts[bl.seg];
-    var gx=bc.x+Math.cos(bc.hd)*bl.gap,gy=bc.y+Math.sin(bc.hd)*bl.gap;
-    if(inR(gx,gy)){
-      var lead=110;
-      var mx=gx-Math.sin(bc.hd)*lead,my=gy+Math.cos(bc.hd)*lead;
-      var pulse=0.5+0.5*Math.sin(raceT*9+j*1.7);
-      ctx.save();ctx.translate(mx,my);ctx.rotate(bc.hd);
-      ctx.globalAlpha=0.55+0.35*pulse;
-      ctx.fillStyle='#7dd3fc';
-      ctx.fillRect(-4,-13,8,4);
-      ctx.fillRect(-8,-9,16,4);
-      ctx.fillRect(-12,-5,24,4);
-      ctx.restore();ctx.globalAlpha=1;
-    }
-  }
-
   /* AI traffic: pixel cars cruising their lanes, slower than the player */
   for(j=0;j<track.traffic.length;j++){
     var tc=track.traffic[j];
@@ -1370,6 +1320,21 @@ function render(){
     ctx.fillStyle='rgba(200,205,215,'+(0.28*lf).toFixed(3)+')';
     var dsz=Math.max(1,d.size*(1.5-lf)*0.5);
     ctx.fillRect(d.x-dsz/2,d.y-dsz/2,dsz,dsz);
+  }
+
+  /* shockwave rings: canvas-drawn pop impact juice (replaces the cheap emoji flash) */
+  for(j=0;j<shockRings.length;j++){
+    var rg=shockRings[j];
+    if(!inR(rg.x,rg.y))continue;
+    var rp=1-rg.life/rg.max;   /* 0 at spawn -> 1 at fade */
+    ctx.strokeStyle='rgba(251,191,36,'+(0.9*(1-rp)).toFixed(3)+')';
+    ctx.lineWidth=5;
+    var rr2=10+rp*64;
+    ctx.strokeRect(rg.x-rr2,rg.y-rr2,rr2*2,rr2*2);
+    ctx.strokeStyle='rgba(254,243,199,'+(0.7*(1-rp)).toFixed(3)+')';
+    ctx.lineWidth=2.5;
+    var rr3=6+rp*40;
+    ctx.strokeRect(rg.x-rr3,rg.y-rr3,rr3*2,rr3*2);
   }
 
   /* confetti burst */
@@ -1406,7 +1371,7 @@ function loop(ts){
     while(acc>=FIXED&&n<MAXSTEPS){
       raceT+=FIXED;
       stepCar(track,car,input,FIXED,raceT);
-      if(car.popped){car.popped=false;flashPop();shakeT=0.35;}
+      if(car.popped){car.popped=false;shakeT=0.35;}   /* ring already spawned in popBomb */
       if(car.bounced){car.bounced=false;puff(car.x,car.y,0,0,8,90,0.6,9);}
       acc-=FIXED;n++;
       if(car.finished)break;
@@ -1426,6 +1391,9 @@ function loop(ts){
     for(i=dust.length-1;i>=0;i--){var dp=dust[i];
       dp.x+=dp.vx*dt;dp.y+=dp.vy*dt;dp.vx*=0.94;dp.vy*=0.94;dp.life-=dt;
       if(dp.life<=0)dust.splice(i,1);
+    }
+    for(i=shockRings.length-1;i>=0;i--){shockRings[i].life-=dt;
+      if(shockRings[i].life<=0)shockRings.splice(i,1);
     }
     var totalMs=raceT*1000;
     timerEl.textContent=fmt(totalMs);
