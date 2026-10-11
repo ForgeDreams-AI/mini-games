@@ -845,7 +845,7 @@ function drawHole(hole,state){
   ctx.fillText(hole.name.toUpperCase()+'  \u2022  PAR '+hole.par+'  \u2022  '+Math.round(hole.dist)+' FT',14,labelY);
 }
 /* ================= game state / flow ================= */
-var LEADERBOARD_URL='';
+var LEADERBOARD_URL='https://script.google.com/macros/s/AKfycbweCdB91evaNssQ8DwTslFAvNuwho8ivWnPsf5j29MVfXezYoWUFGatJ3cXqKBVUxTmsg/exec';
 var GAME_ID='daily-putt-putt';
 var LS='dailyputtputt.v2';
 

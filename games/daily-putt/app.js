@@ -777,7 +777,7 @@ function drawGreen(green,state){
 }
 
 /* ================= game state / flow ================= */
-var LEADERBOARD_URL='';
+var LEADERBOARD_URL='https://script.google.com/macros/s/AKfycbweCdB91evaNssQ8DwTslFAvNuwho8ivWnPsf5j29MVfXezYoWUFGatJ3cXqKBVUxTmsg/exec';
 var GAME_ID='daily-putt';
 var LS='dailyputt.v2';
 

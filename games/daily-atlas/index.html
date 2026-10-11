@@ -221,7 +221,7 @@ async function sha256hex(str){
 }
 
 /* ================= leaderboard client ================= */
-var LEADERBOARD_URL=''; // <-- paste the Apps Script web-app URL here to go live
+var LEADERBOARD_URL='https://script.google.com/macros/s/AKfycbweCdB91evaNssQ8DwTslFAvNuwho8ivWnPsf5j29MVfXezYoWUFGatJ3cXqKBVUxTmsg/exec'; // live 2026-10-11
 function apiGet(params){
   if(!LEADERBOARD_URL) return Promise.reject(new Error('no-url'));
   var ctl=new AbortController(); var t=setTimeout(function(){ctl.abort();},8000);
