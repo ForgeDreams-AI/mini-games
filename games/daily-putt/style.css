@@ -36,7 +36,7 @@ html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; background: 
 #phaseBtn { background: #15803d; color: #fff; border: none; border-radius: 14px; padding: 14px 34px;
   font-size: 17px; font-weight: 800; letter-spacing: .5px; box-shadow: 0 4px 0 #14532d; }
 #phaseBtn:active { transform: translateY(2px); box-shadow: 0 2px 0 #14532d; }
-#resultLine { font-size: 18px; font-weight: 800; min-height: 24px; }
+#resultLine { font-size: 18px; font-weight: 800; min-height: 24px; margin-top: 10px; }
 
 /* ---------- the needle (horizontal timing bar) ---------- */
 #needleBar { position: absolute; left: 14px; right: 14px; bottom: 162px; z-index: 7;
@@ -55,8 +55,8 @@ html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; background: 
 .nn0,.nnpure,.nnover,.nn100 { position: absolute; font-size: 11px; font-weight: 900;
   color: #fff; text-shadow: 0 1px 3px rgba(0,0,0,.7); }
 .nn0 { left: 2px; } .nn100 { right: 2px; }
-.nnpure { left: 84.5%; transform: translateX(-50%); color: #fde68a; }
-.nnover { left: 93.5%; transform: translateX(-50%); color: #fca5a5; }
+.nnpure { left: 84.5%; transform: translateX(-50%); color: #fde68a; font-size: 9px; }
+.nnover { left: 93.5%; transform: translateX(-50%); color: #fca5a5; font-size: 9px; }
 #needleCap { text-align: center; font-size: 12px; font-weight: 700; color: #fff;
   text-shadow: 0 1px 3px rgba(0,0,0,.7); margin-top: 2px; }
 

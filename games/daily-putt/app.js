@@ -380,17 +380,21 @@ function drawSlopeArrows(green){
       if(dist2(gx,gy,G.ballX,G.ballY)<2.4)continue;
       var si=slopeInfo(green.h,gx,gy);
       if(si.flat)continue;
-      var n=si.pct<1.5?1:(si.pct<3.0?2:3);
-      var size=clamp(9+si.pct*3.8,10,30);
-      var alpha=clamp(0.38+si.pct*0.11,0.38,0.85);
+      /* keep chevrons small enough that neighboring tiles don't collide
+         into scribbles on severe greens */
+      var n=si.pct<2.5?1:2;
+      var size=clamp(8+si.pct*2.2,9,22);
+      var alpha=clamp(0.38+si.pct*0.09,0.38,0.7);
       var ang=Math.atan2(si.dy,si.dx);
       var flow=((nowS*0.9+(gx*0.7+gy*1.3)*0.05)%1+1)%1;
-      var gap=size*1.15;
+      var gap=size*1.25;
       ctx.strokeStyle='rgba(13,28,52,'+alpha.toFixed(3)+')';
       ctx.lineWidth=Math.max(2.5,size*0.22);
       for(var k=0;k<n;k++){
         var off=(k-flow)*gap;
-        var s=w2s(gx+si.dx*off,gy+si.dy*off);
+        var wx=gx+si.dx*off, wy=gy+si.dy*off;
+        if(!inPoly(wx,wy,green.poly))continue; /* keep chevrons on the green */
+        var s=w2s(wx,wy);
         var r=size*0.5;
         ctx.save();ctx.translate(s.x,s.y);ctx.rotate(ang);
         ctx.beginPath();
@@ -579,10 +583,13 @@ function drawGreen(green,state){
     ctx.globalAlpha=1;
   }
 
-  /* green name + par + distance (bottom-left of the green view, clear of the HUD strip) */
+  /* green name + par + distance (bottom-left of the green view, clear of the HUD strip;
+     lifted while the needle bar is up so they don't overlap) */
   ctx.fillStyle='rgba(255,255,255,0.92)';
   ctx.font='800 13px -apple-system,sans-serif';ctx.textAlign='left';
-  ctx.fillText(green.name.toUpperCase()+'  \u2022  PAR '+green.par+'  \u2022  '+Math.round(green.dist)+' FT',14,ch-PANEL_H-24);
+  var labelY=ch-PANEL_H-24;
+  if(state.phase==='sweep')labelY-=100;
+  ctx.fillText(green.name.toUpperCase()+'  \u2022  PAR '+green.par+'  \u2022  '+Math.round(green.dist)+' FT',14,labelY);
 }
 
 /* ================= game state / flow ================= */
