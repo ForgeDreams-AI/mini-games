@@ -119,7 +119,7 @@
     </div>
     <div class="card">
       <p class="note" style="text-align:left"><b>How it plays</b><br>
-      • Top of each inning: YOU pitch to 3 CPU batters — pick a pitch, pick a spot, stop the meter in the green.<br>
+      • Top of each inning: YOU pitch to 3 CPU batters — pick a pitch, pick a spot, stop the meter in the green. Heat is fast, breaking stuff has a tiny zone — and it gets meaner with 2 strikes or runners on.<br>
       • Bottom: YOU bat 3 times — tap when the needle hits green.<br>
       • Win = more runs than the CPU. Ties count as a loss.<br>
       • One shot at the daily per day. Resets at midnight.</p>
@@ -244,12 +244,58 @@ BB.makeDaily=function(dateStr){
   return {date:dateStr,pitches:pitches,batters:batters};
 };
 
-/* fatigue: meter speed multiplier + perfect-window half-width */
+/* ---- meter difficulty: harder overall, varies by pitch + situation ---- */
+BB.PITCH_METER={
+  'Fastball':{spd:1.30,zone:0.85},  /* heat: very fast needle, fair zone */
+  'Curveball':{spd:0.95,zone:0.70}, /* slow but tiny zone — hard to command */
+  'Slider':  {spd:1.20,zone:0.65},  /* fast AND small — the nasty one */
+  'Changeup':{spd:0.85,zone:0.80},  /* slow floater, decent zone */
+  'Sinker':  {spd:1.15,zone:0.75},
+  'Cutter':  {spd:1.25,zone:0.70}
+};
+/* fatigue: pitch count + repeating the same pitch */
 BB.meterSpeed=function(pitchCount,sameStreak){
-  return Math.min(1+pitchCount*0.006+sameStreak*0.05,1.5);
+  return Math.min(1+pitchCount*0.008+sameStreak*0.06,1.9);
 };
 BB.perfectHalf=function(sameStreak){
-  return Math.max(0.06-sameStreak*0.005,0.035);
+  return Math.max(0.045-sameStreak*0.004,0.028);
+};
+/* situation multipliers for pitching: count, runners, batter, inning */
+BB.situationF=function(S){
+  var f={spd:1,zone:1,tags:[]};
+  var b=S.count.b,s=S.count.s;
+  if(s===2){f.spd*=1.15;f.zone*=0.85;f.tags.push('2 strikes');}
+  else if(b===3){f.spd*=0.92;f.zone*=1.10;f.tags.push('3–0');}
+  else if(b>s){f.spd*=1.05;f.zone*=0.95;f.tags.push('behind');}
+  if(S.bases[0]&&S.bases[1]&&S.bases[2]){f.spd*=1.20;f.zone*=0.80;f.tags.push('jam');}
+  else if(S.bases[1]||S.bases[2]){f.spd*=1.10;f.zone*=0.90;f.tags.push('RISP');}
+  var bat=(S.half==='top'&&BB.currentBatter)?BB.currentBatter(S):null;
+  if(bat){
+    if(bat.tier==='G'){f.spd*=1.12;f.zone*=0.85;f.tags.push('tough bat');}
+    else if(bat.tier==='E'){f.spd*=0.95;f.zone*=1.05;}
+  }
+  if(S.inning>=3){f.spd*=1.05;f.zone*=0.95;}
+  return f;
+};
+BB.starsFor=function(score){
+  return score<1.05?1:score<1.45?2:score<1.9?3:score<2.5?4:5;
+};
+/* combined meter params. kind 'pitch'|'bat'. */
+BB.meterParams=function(kind,S,pitchName,sameStreak){
+  var pm=BB.PITCH_METER[pitchName]||{spd:1,zone:1};
+  var fat=BB.meterSpeed(S.pitchCount,kind==='pitch'?sameStreak:0);
+  var spd,zone,tags=[];
+  if(kind==='pitch'){
+    var sit=BB.situationF(S);
+    spd=pm.spd*fat*sit.spd; zone=pm.zone*sit.zone; tags=sit.tags;
+  }else{
+    spd=1.10*pm.spd*fat*(S.count.s===2?1.12:1);
+    zone=pm.zone*(S.count.s===2?0.90:1);
+    if(S.count.s===2)tags.push('protect');
+  }
+  var half=Math.max(BB.perfectHalf(kind==='pitch'?sameStreak:0)*zone,0.028);
+  var stars=BB.starsFor(spd*(0.045/half));
+  return {speed:spd,half:half,stars:stars,tags:tags};
 };
 
 /* one pitch by the player. target 0..8 (4=center). acc 0..1.
@@ -494,8 +540,33 @@ function renderScore(){
 /* big-head art: swap pitcher/batter by half; reactions are CSS-only */
 function renderScene(){
   var c=el('scenechar'); if(!c||!S)return;
+  if(V&&V.swinging)return; /* swing flipbook owns the image mid-swing */
   var want=S.half==='top'?'img/pitcher.png':'img/batter.png';
   if(c.getAttribute('src')!==want)c.src=want;
+}
+/* swing flipbook: stance -> mid-swing -> follow-through (contact) or whiff (miss). art only. */
+var SWING_FRAMES=['img/batter.png','img/swing-mid.png','img/swing-follow.png','img/swing-whiff.png'];
+var swingTimer=null;
+function preloadSwing(){SWING_FRAMES.forEach(function(s){var im=new Image();im.src=s;});}
+function stopSwing(){if(swingTimer){clearInterval(swingTimer);clearTimeout(swingTimer);swingTimer=null;}if(V)V.swinging=false;}
+function playSwing(ev){
+  var c=el('scenechar'); if(!c||!V)return;
+  stopSwing();
+  var swung = ev.type!=='strike' || ev.swinging; /* strike-looking: batter never swings */
+  if(!swung) return;
+  var contact = ev.type==='hit' || ev.type==='out'; /* contact outs (fly/ground) end on follow-through */
+  var seq=['img/batter.png','img/swing-mid.png', contact?'img/swing-follow.png':'img/swing-whiff.png'];
+  V.swinging=true;
+  var i=0; c.src=seq[0];
+  swingTimer=setInterval(function(){
+    i++;
+    if(i<seq.length){ c.src=seq[i]; return; }
+    clearInterval(swingTimer);
+    swingTimer=setTimeout(function(){
+      swingTimer=null; if(V)V.swinging=false;
+      renderScene(); /* back to the right image for the current half */
+    },900);
+  },110);
 }
 function sceneReact(kind){
   var c=el('scenechar'); if(!c)return;
@@ -508,6 +579,7 @@ function startGame(mode){
   var daily = mode==='daily' ? BB.makeDaily(date) : BB.makeDaily('practice|'+Date.now()+Math.random());
   S=BB.newGame(daily,mode); S.date=date;
   V={phase:null,selPitch:0,selTarget:4,meter:null};
+  stopSwing(); preloadSwing();
   el('game-mode').textContent=mode==='daily'?'DAILY':'PRACTICE';
   clearLog(); show('screen-game');
   log('Play ball! Top of the 1st — you\'re pitching.');
@@ -527,7 +599,9 @@ function phasePitchSelect(){
   el('batterline').textContent = bat?('Batter: '+bat.name+' — K rate '+bat.k+'%'):'';
   S.daily.pitches.forEach(function(p,i){
     var b=document.createElement('button'); b.className='pitchbtn';
-    b.innerHTML='<span>'+p.name+'</span><small>'+p.speed+' mph · break '+p.brk+'/10'+(i===S.lastPitch&&S.sameStreak>0?' · ×'+(S.sameStreak+1):'')+'</small>';
+    var pm=BB.PITCH_METER[p.name]||{spd:1,zone:1};
+    var dstars='⚡'.repeat(BB.starsFor(pm.spd/pm.zone));
+    b.innerHTML='<span>'+p.name+'</span><small>'+p.speed+' mph · break '+p.brk+'/10 · '+dstars+(i===S.lastPitch&&S.sameStreak>0?' · ×'+(S.sameStreak+1):'')+'</small>';
     b.onclick=function(){V.selPitch=i;phaseTarget();};
     box.appendChild(b);
   });
@@ -556,11 +630,15 @@ function phaseMeter(kind){
     ? '<b>Stop the needle in the green!</b> ('+S.daily.pitches[V.selPitch].name+')'
     : '<b>Tap in the green to swing!</b> ('+V.batPitch.name+' coming)';
   var streak = kind==='pitch' ? ((V.selPitch===S.lastPitch)?S.sameStreak+1:S.sameStreak) : 0;
-  var half=BB.perfectHalf(kind==='pitch'?streak:0);
+  var pName = kind==='pitch' ? S.daily.pitches[V.selPitch].name : V.batPitch.name;
+  var P=BB.meterParams(kind,S,pName,streak);
+  var bolt='⚡'.repeat(P.stars);
+  el('meter-label').innerHTML = kind==='pitch'
+    ? '<b>Stop the needle in the green!</b> ('+pName+' · '+bolt+(P.tags.length?' · '+P.tags.join(', '):'')+')'
+    : '<b>Tap in the green to swing!</b> ('+pName+' coming · '+bolt+(P.tags.length?' · '+P.tags.join(', '):'')+')';
   var pf=el('meter-perfect');
-  pf.style.left=((0.5-half)*100)+'%'; pf.style.width=((half*2)*100)+'%';
-  var speed=BB.meterSpeed(S.pitchCount, kind==='pitch'?streak:0);
-  V.meter={kind:kind,t0:performance.now(),period:1500/speed,pos:0,half:half,stopped:false};
+  pf.style.left=((0.5-P.half)*100)+'%'; pf.style.width=((P.half*2)*100)+'%';
+  V.meter={kind:kind,t0:performance.now(),period:1100/P.speed,pos:0,half:P.half,stopped:false};
   requestAnimationFrame(meterTick);
 }
 function meterTick(now){
@@ -629,6 +707,7 @@ function doPlayerBat(acc){
   else if(ev.type==='hit') msg=hitMsg(ev.kind,'YOU');
   else msg='❌ '+cap(ev.how)+' — you\'re out.';
   log(msg); renderScore();
+  playSwing(ev); /* flipbook swing animation; art only, outcome already decided */
   if(ev.type==='hit'&&ev.kind==='HR') sceneReact('bounce');
   else if(S.count.s>=3||ev.strikeout) sceneReact('shake');
   if(r.halfOver){ endHalfUI(); } else startBat();
