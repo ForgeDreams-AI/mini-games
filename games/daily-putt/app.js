@@ -2,6 +2,25 @@
    DAILY PUTT -- nine greens, stroke play: up to 6 putts each.
    Fewest total strokes wins. Original code. Top-down putting,
    date-seeded daily set.
+
+   Controls (owner spec, 2026-10-10 -- follow to the letter):
+   1. AIM LINE FIRST: a bold, unmissable line starts at the ball.
+      Drag anywhere on the green to rotate it and set direction.
+   2. PULL/STRETCH for distance: drag farther = longer line =
+      farther putt (slingshot feel). Distance readout while
+      stretching; dots along the line keep it countable (8 ft each).
+   3. VERTICAL TOUCH BAR to strike: always visible during every
+      putt. BOTTOM = soft/slow, TOP = firm/fast. TAP the bar to
+      hit -- tap position sets the speed. A gold mark on the bar
+      shows where to tap for exactly the stretched distance;
+      tap the mark = PURE (perfect input rewarded).
+   4. Repeat until it goes in (6-putt cap; ball stays where it stops).
+
+   Camera is STATIC: the whole green always fits on screen, ball
+   and hole always visible together -- nothing pans or zooms.
+   Slopes read via animated downhill chevrons tiled across the
+   green. Physics and chevrons sample the SAME numeric gradient,
+   so the picture and the ball always agree.
    ============================================================ */
 (function(){
 'use strict';
@@ -22,14 +41,16 @@ var CUP_R=0.42;          /* cup capture radius (generous for feel)   */
 var BALL_R=0.30;         /* visual ball radius                       */
 var V_CAP=4.0;           /* max speed at cup for a clean drop        */
 var V_STOP=0.12;         /* below this the ball is at rest           */
-var DMAX=80;             /* putt distance at full (100) power        */
-var DOT_N=10;            /* Wii-style aim dots: 10 dots = full meter */
-var DOT_FT=DMAX/DOT_N;   /* world feet between dots (8); 1 dot = 0.1 of meter */
+var DMAX=80;             /* putt distance at full (1.0) power        */
+var DOT_FT=8;            /* aim-line dots: 1 dot = 8 ft of carry     */
+var BAR_MAX=1.15;        /* bar top = 1.15 power (overhit headroom)  */
+var STRETCH_MIN=4;       /* shortest aim-line stretch (ft)           */
+var STRETCH_MAX=92;      /* longest stretch = DMAX*BAR_MAX (ft)      */
 var DT=1/240;
 
 /* ================= green archetypes =================
    Each archetype builds a height-field closure h(x,y) plus metadata.
-   Physics AND the drawn slope arrows both sample the same numeric
+   Physics AND the drawn slope chevrons both sample the same numeric
    gradient, so they always agree. */
 var ARCHES=[
   {id:'gentle',  name:'Gentle tilt',   R:[26,34], dMin:14, dMax:26},
@@ -43,7 +64,7 @@ var ARCHES=[
   {id:'tiny',    name:'Tiny green',    R:[12,16], dMin:10, dMax:18}
 ];
 
-/* numeric gradient of h -- single source of truth for physics + arrows */
+/* numeric gradient of h -- single source of truth for physics + chevrons */
 function gradOf(h,x,y){
   var e=0.06;
   return {x:(h(x+e,y)-h(x-e,y))/(2*e), y:(h(x,y+e)-h(x,y-e))/(2*e)};
@@ -171,7 +192,6 @@ function buildGreen(rng,archId){
   return {
     arch:archId, name:A.name, R:R, poly:poly, ball:ball, cup:cup,
     dist:d, lineA:lineA, h:h, bunkers:bunk||[],
-    pinM:clamp(d/DMAX,0.05,1.12),
     bbox:{x0:Math.min.apply(null,xs),x1:Math.max.apply(null,xs),
           y0:Math.min.apply(null,ys),y1:Math.max.apply(null,ys)},
     seed:(rng()*1e9)|0
@@ -192,7 +212,7 @@ function simulate(green,aimA,powerM,opts){
   var pureBonus=(opts.pure===true);
   var vCap=pureBonus?V_CAP*1.5:V_CAP;
   var cupR=pureBonus?CUP_R*1.15:CUP_R;
-  var v0=Math.sqrt(2*FRICTION*DMAX*clamp(powerM,0,1.15));
+  var v0=Math.sqrt(2*FRICTION*DMAX*clamp(powerM,0,BAR_MAX));
   /* stroke play: putts after the first start from where the ball stopped */
   var sx=(opts.from&&isFinite(opts.from.x))?opts.from.x:green.ball.x;
   var sy=(opts.from&&isFinite(opts.from.y))?opts.from.y:green.ball.y;
@@ -245,23 +265,22 @@ function simulate(green,aimA,powerM,opts){
   return{holed:false,x:x,y:y,trail:trail,maxBreak:maxBreak,lipped:lipped,offGreen:offGreen,plugged:plugged};
 }
 
-/* grade the stroke: absolute deviation from pin power.
-   The needle sweeps 0->1.15 in 3.4s; PURE = within +/-0.0575 units =
-   10% of the sweep on EVERY green (design: timing-window rule).
-   Ratio-based bands made short putts brutally tight (2.2% of sweep)
-   and lag putts trivial (11%) -- inverted difficulty. */
-function gradeStroke(m,pinM){
-  var d=Math.abs(m-pinM);
-  if(d<=0.0575)return'PURE';
-  if(d<=0.115)return'SOLID';
-  return m<pinM?'EASED':'OVERHIT';
-}
-
-/* pin power for the CURRENT lie: stroke play re-aims from where the
-   ball stopped, so the pin marker is recomputed every putt */
-function curPinM(){
-  var g=G.greens[G.hole];
-  return clamp(dist2(G.ballX,G.ballY,g.cup.x,g.cup.y)/DMAX,0.05,1.12);
+/* ================= control mapping (pure -- testable) =================
+   stretch (ft) -> power: on a flat green, power p carries DMAX*p feet,
+   so stretching L feet aims for an L-foot putt. The bar maps its full
+   height to [0, BAR_MAX]; the gold mark sits where a tap reproduces
+   the stretched distance exactly. */
+function stretchToPower(ft){return clamp(ft/DMAX,0,BAR_MAX);}
+function tapFracToPower(frac){return clamp(frac,0,1)*BAR_MAX;}
+function tapYToPower(tapY,top,h){return tapFracToPower(1-(tapY-top)/h);}
+/* grade the strike: absolute deviation of tap power from the mark.
+   PURE = within +/-0.0575 power units (5% of bar height) -- the same
+   absolute window the old meter used, so perfect input is rewarded. */
+function gradeTap(power,mark){
+  var d=power-mark,ad=Math.abs(d);
+  if(ad<=0.0575)return'PURE';
+  if(ad<=0.115)return'SOLID';
+  return d<0?'SOFT':'FIRM';
 }
 
 /* ================= rendering ================= */
@@ -272,31 +291,28 @@ function resize(){
   cw=window.innerWidth;ch=window.innerHeight;
   canvas.width=Math.round(cw*dpr);canvas.height=Math.round(ch*dpr);
   ctx.setTransform(dpr,0,0,dpr,0,0);
+  sizeBar();
 }
-window.addEventListener('resize',resize);resize();
+window.addEventListener('resize',resize);
 
-/* camera: always frame BOTH the ball and the cup -- the player must
-   never wonder where the hole is. Fits the ball+cup box with padding,
-   keeping at least ~1/3 of the green's extent for context. */
-var PANEL_H=170,TOP_H=110;
-var cam={scale:1,ox:0,oy:0,panX:0,panY:0};
-function fitCam(green,bx,by){
-  if(bx==null||by==null){bx=green.ball.x;by=green.ball.y;}
-  var bb=green.bbox,pad=13;
-  var x0=Math.min(bx,green.cup.x)-pad, x1=Math.max(bx,green.cup.x)+pad;
-  var y0=Math.min(by,green.cup.y)-pad, y1=Math.max(by,green.cup.y)+pad;
-  var hx=Math.max((x1-x0)/2,(bb.x1-bb.x0)*0.32);
-  var hy=Math.max((y1-y0)/2,(bb.y1-bb.y0)*0.32);
-  var aw=cw-56, ah=ch-PANEL_H-TOP_H-40;
-  cam.scale=Math.min(aw/(2*hx),ah/(2*hy));
-  cam.ox=(x0+x1)/2;cam.oy=(y0+y1)/2;
-  cam.panX=0;cam.panY=0;
+/* STATIC camera: the whole green always fits on screen. Ball and cup
+   are always visible together. Nothing pans, nothing zooms mid-putt. */
+var PANEL_H=150,TOP_H=110;
+var cam={scale:1,ox:0,oy:0,vcx:0,vcy:0};
+function fitStatic(green){
+  var bb=green.bbox,pad=7;
+  var vx0=10,vx1=cw-100,vy0=TOP_H+10,vy1=ch-PANEL_H-10;
+  var wcx=(bb.x0+bb.x1)/2,wcy=(bb.y0+bb.y1)/2;
+  var hw=(bb.x1-bb.x0)/2+pad,hh=(bb.y1-bb.y0)/2+pad;
+  cam.scale=Math.min((vx1-vx0)/(2*hw),(vy1-vy0)/(2*hh));
+  cam.ox=wcx;cam.oy=wcy;
+  cam.vcx=(vx0+vx1)/2;cam.vcy=(vy0+vy1)/2;
 }
 function w2s(x,y){ /* world -> screen */
-  return {x:(x-cam.ox)*cam.scale+cw/2+cam.panX, y:(y-cam.oy)*cam.scale+ch/2-PANEL_H/2+TOP_H/3+cam.panY};
+  return {x:(x-cam.ox)*cam.scale+cam.vcx, y:(y-cam.oy)*cam.scale+cam.vcy};
 }
 function s2w(sx,sy){
-  return {x:(sx-cw/2-cam.panX)/cam.scale+cam.ox, y:(sy-ch/2+PANEL_H/2-TOP_H/3-cam.panY)/cam.scale+cam.oy};
+  return {x:(sx-cam.vcx)/cam.scale+cam.ox, y:(sy-cam.vcy)/cam.scale+cam.oy};
 }
 
 function pathOf(poly){
@@ -307,33 +323,92 @@ function pathOf(poly){
   }
   ctx.closePath();
 }
+function roundRectP(x,y,w,h,r){
+  ctx.beginPath();
+  ctx.moveTo(x+r,y);
+  ctx.arcTo(x+w,y,x+w,y+h,r);ctx.arcTo(x+w,y+h,x,y+h,r);
+  ctx.arcTo(x,y+h,x,y,r);ctx.arcTo(x,y,x+w,y,r);
+  ctx.closePath();
+}
 
-/* Wii-style drift grid: dots at grid intersections slide continuously
-   downhill; drift speed is proportional to steepness. Samples the same
-   numeric gradient the physics uses, so the picture and the ball agree. */
+/* slope chevrons: tiled across the green, pointing DOWNHILL.
+   size + count = steepness. Animated so they flow downhill.
+   Samples the same numeric gradient the physics uses. */
 var nowS=0; /* seconds, updated in the main loop */
-function driftDirOf(h,x,y){
+function slopeDirOf(h,x,y){
   var g=gradOf(h,x,y);
   var m=Math.sqrt(g.x*g.x+g.y*g.y);
   if(m<0.004)return null;
   return {x:-g.x/m, y:-g.y/m, steep:m};
 }
-function drawDriftGrid(green){
-  var SP=4.2, bb=green.bbox;
-  ctx.fillStyle='rgba(18,32,56,0.68)';
-  for(var gx=bb.x0+2;gx<=bb.x1-2;gx+=SP){
-    for(var gy=bb.y0+2;gy<=bb.y1-2;gy+=SP){
+function drawChevrons(green){
+  var SP=6.5, bb=green.bbox;
+  ctx.lineCap='round';ctx.lineJoin='round';
+  for(var gx=bb.x0+3;gx<=bb.x1-3;gx+=SP){
+    for(var gy=bb.y0+3;gy<=bb.y1-3;gy+=SP){
       if(!inPoly(gx,gy,green.poly))continue;
-      if(dist2(gx,gy,green.cup.x,green.cup.y)<1.8)continue;
-      var d=driftDirOf(green.h,gx,gy);
+      if(dist2(gx,gy,green.cup.x,green.cup.y)<2.4)continue;
+      if(dist2(gx,gy,G.ballX,G.ballY)<2.4)continue;
+      var d=slopeDirOf(green.h,gx,gy);
       if(!d)continue;
-      var phase=((gx*12.9898+gy*78.233)%1+1)%1*SP;
-      var off=((nowS*60*d.steep+phase)%SP+SP)%SP-SP/2;
-      var px=gx+d.x*off, py=gy+d.y*off;
-      var s=w2s(px,py);
-      ctx.beginPath();ctx.arc(s.x,s.y,2.1,0,Math.PI*2);ctx.fill();
+      var n=d.steep<0.015?1:(d.steep<0.030?2:3);
+      var size=clamp(9+d.steep*380,10,30);
+      var alpha=clamp(0.38+d.steep*11,0.38,0.85);
+      var ang=Math.atan2(d.y,d.x);
+      var flow=((nowS*0.9+(gx*0.7+gy*1.3)*0.05)%1+1)%1;
+      var gap=size*1.15;
+      ctx.strokeStyle='rgba(13,28,52,'+alpha.toFixed(3)+')';
+      ctx.lineWidth=Math.max(2.5,size*0.22);
+      for(var k=0;k<n;k++){
+        var off=(k-flow)*gap;
+        var s=w2s(gx+d.x*off,gy+d.y*off);
+        var r=size*0.5;
+        ctx.save();ctx.translate(s.x,s.y);ctx.rotate(ang);
+        ctx.beginPath();
+        ctx.moveTo(-r*0.7,-r);ctx.lineTo(r*0.7,0);ctx.lineTo(-r*0.7,r);
+        ctx.stroke();ctx.restore();
+      }
     }
   }
+}
+
+/* the aim line: bold red-cased white line, countable dots (8 ft each),
+   arrowhead, distance pill. Unmissable. */
+function drawAimLine(){
+  if(G.phase!=='aim')return;
+  var ex=G.ballX+Math.cos(G.aimA)*G.stretchFt,
+      ey=G.ballY+Math.sin(G.aimA)*G.stretchFt;
+  var bs=w2s(G.ballX,G.ballY),be=w2s(ex,ey);
+  ctx.lineCap='round';
+  ctx.strokeStyle='#dc2626';ctx.lineWidth=8;
+  ctx.beginPath();ctx.moveTo(bs.x,bs.y);ctx.lineTo(be.x,be.y);ctx.stroke();
+  ctx.strokeStyle='#ffffff';ctx.lineWidth=4.5;
+  ctx.beginPath();ctx.moveTo(bs.x,bs.y);ctx.lineTo(be.x,be.y);ctx.stroke();
+  var ndots=Math.floor(G.stretchFt/DOT_FT);
+  for(var k=1;k<=ndots;k++){
+    var dp=w2s(G.ballX+Math.cos(G.aimA)*k*DOT_FT,
+               G.ballY+Math.sin(G.aimA)*k*DOT_FT);
+    ctx.fillStyle='rgba(0,0,0,0.25)';
+    ctx.beginPath();ctx.arc(dp.x+1.5,dp.y+2,3.4,0,Math.PI*2);ctx.fill();
+    ctx.fillStyle='#ffffff';
+    ctx.beginPath();ctx.arc(dp.x,dp.y,3.4,0,Math.PI*2);ctx.fill();
+  }
+  /* arrowhead */
+  ctx.save();ctx.translate(be.x,be.y);ctx.rotate(G.aimA);
+  ctx.fillStyle='#dc2626';
+  ctx.beginPath();ctx.moveTo(15,0);ctx.lineTo(-5,-11);ctx.lineTo(-5,11);ctx.closePath();ctx.fill();
+  ctx.fillStyle='#ffffff';
+  ctx.beginPath();ctx.moveTo(10,0);ctx.lineTo(-5,-7);ctx.lineTo(-5,7);ctx.closePath();ctx.fill();
+  ctx.restore();
+  /* distance pill */
+  var lbl=Math.round(G.stretchFt)+' FT';
+  ctx.font='800 13px -apple-system,sans-serif';
+  var tw=ctx.measureText(lbl).width;
+  var lx=be.x+16,ly=be.y-16;
+  ctx.fillStyle='rgba(17,24,39,0.88)';
+  roundRectP(lx-9,ly-14,tw+18,26,9);ctx.fill();
+  ctx.fillStyle='#ffffff';ctx.textAlign='left';
+  ctx.fillText(lbl,lx,ly+5);
 }
 
 function drawGreen(green,state){
@@ -342,7 +417,7 @@ function drawGreen(green,state){
   bg.addColorStop(0,'#2c6e35');bg.addColorStop(1,'#1d4a26');
   ctx.fillStyle=bg;ctx.fillRect(0,0,cw,ch);
 
-  /* fringe ring (slightly larger blob, darker) */
+  /* green body */
   ctx.save();
   pathOf(green.poly);
   ctx.fillStyle='#3a7d3f';ctx.fill();
@@ -376,21 +451,8 @@ function drawGreen(green,state){
     ctx.restore();
   }
 
-  /* Wii-style drift grid (same gradient the physics uses) */
-  drawDriftGrid(green);
-  /* % labels near cup */
-  var spots=[{x:green.cup.x,y:green.cup.y},
-             {x:(green.cup.x+green.ball.x)/2,y:(green.cup.y+green.ball.y)/2}];
-  ctx.fillStyle='rgba(20,35,60,0.85)';
-  ctx.font='700 '+Math.max(11,cam.scale*0.55|0)+'px -apple-system,sans-serif';
-  ctx.textAlign='center';
-  for(var l=0;l<spots.length;l++){
-    if(!inPoly(spots[l].x,spots[l].y,green.poly))continue;
-    var g2=gradOf(green.h,spots[l].x,spots[l].y);
-    var pct=Math.round(Math.sqrt(g2.x*g2.x+g2.y*g2.y)*100);
-    var sp=w2s(spots[l].x,spots[l].y+1.2);
-    ctx.fillText(pct+'%',sp.x,sp.y);
-  }
+  /* slope chevrons (same gradient the physics uses) */
+  drawChevrons(green);
 
   /* cup: big, dark, impossible to miss -- with a pulsing gold ring */
   var cp=w2s(green.cup.x,green.cup.y);
@@ -419,38 +481,8 @@ function drawGreen(green,state){
   ctx.lineTo(cp.x+cupRpx*3.1,cp.y-fh+cupRpx*1.0+wave);
   ctx.lineTo(cp.x,cp.y-fh+cupRpx*2.0);ctx.closePath();ctx.stroke();
 
-  /* edge arrow: if the cup is ever off-screen (panned away), point at it */
-  var mrg=18,vx0=mrg,vx1=cw-mrg,vy0=TOP_H+mrg,vy1=ch-PANEL_H-mrg;
-  if(cp.x<vx0||cp.x>vx1||cp.y<vy0||cp.y>vy1){
-    var ang=Math.atan2(cp.y-ch/2,cp.x-cw/2);
-    var exx=clamp(cp.x,vx0+16,vx1-16),eyy=clamp(cp.y,vy0+16,vy1-16);
-    ctx.save();ctx.translate(exx,eyy);ctx.rotate(ang);
-    ctx.fillStyle='#ffd23c';ctx.strokeStyle='rgba(0,0,0,0.35)';ctx.lineWidth=2;
-    ctx.beginPath();ctx.moveTo(22,0);ctx.lineTo(-8,-13);ctx.lineTo(-2,0);ctx.lineTo(-8,13);
-    ctx.closePath();ctx.fill();ctx.stroke();ctx.restore();
-  }
-
-  /* Wii dot aim line: evenly spaced dots, 1 dot = 0.1 of the power meter */
-  if(state.phase==='aim'&&state.aimA!=null){
-    var bs0=w2s(state.ballX,state.ballY);
-    var bEnd=w2s(state.ballX+Math.cos(state.aimA)*DOT_N*DOT_FT,
-                 state.ballY+Math.sin(state.aimA)*DOT_N*DOT_FT);
-    ctx.strokeStyle='rgba(255,255,255,0.30)';ctx.lineWidth=3;ctx.lineCap='round';
-    ctx.beginPath();ctx.moveTo(bs0.x,bs0.y);ctx.lineTo(bEnd.x,bEnd.y);ctx.stroke();
-    for(var dk=1;dk<=DOT_N;dk++){
-      var dp=w2s(state.ballX+Math.cos(state.aimA)*dk*DOT_FT,
-                 state.ballY+Math.sin(state.aimA)*dk*DOT_FT);
-      var dr=(dk%5===0)?4.6:3.1;
-      ctx.fillStyle='rgba(0,0,0,0.30)';
-      ctx.beginPath();ctx.arc(dp.x+1.5,dp.y+1.5,dr,0,Math.PI*2);ctx.fill();
-      ctx.fillStyle='#ffffff';
-      ctx.beginPath();ctx.arc(dp.x,dp.y,dr,0,Math.PI*2);ctx.fill();
-      if(dk%5===0){
-        ctx.fillStyle='#b91c1c';
-        ctx.beginPath();ctx.arc(dp.x,dp.y,1.8,0,Math.PI*2);ctx.fill();
-      }
-    }
-  }
+  /* aim line (only while aiming) */
+  drawAimLine();
 
   /* ball trail */
   if(state.trail&&state.trail.length>1){
@@ -505,8 +537,8 @@ var holeLabel=document.getElementById('holeLabel'),modeTag=document.getElementBy
     scoreStrip=document.getElementById('scoreStrip'),
     phaseHint=document.getElementById('phaseHint'),phaseBtn=document.getElementById('phaseBtn'),
     resultLine=document.getElementById('resultLine'),
-    meterWrap=document.getElementById('meterWrap'),mNeedle=document.getElementById('mNeedle'),
-    mPin=document.getElementById('mPin'),
+    puttBar=document.getElementById('puttBar'),barTrack=document.getElementById('barTrack'),
+    barMark=document.getElementById('barMark'),barMarkLbl=document.getElementById('barMarkLbl'),
     startScreen=document.getElementById('startScreen'),playBtn=document.getElementById('playBtn'),
     practiceBtn=document.getElementById('practiceBtn'),lockBox=document.getElementById('lockBox'),
     lockTime=document.getElementById('lockTime'),lockScore=document.getElementById('lockScore'),
@@ -520,6 +552,20 @@ var holeLabel=document.getElementById('holeLabel'),modeTag=document.getElementBy
     lbList=document.getElementById('lbList'),histList=document.getElementById('histList'),
     logoutBtn=document.getElementById('logoutBtn'),resultsClose=document.getElementById('resultsClose');
 
+function sizeBar(){
+  /* vertical touch bar: sized to the green viewport, right side */
+  var gh=(ch-PANEL_H-10)-(TOP_H+10);
+  var bh=Math.round(clamp(gh-64,190,360));
+  puttBar.style.height=bh+'px';
+  puttBar.style.top=((TOP_H+10)+(gh-bh)/2)+'px';
+}
+function updateBarMark(){
+  /* gold mark: tap HERE to reproduce the stretched distance exactly */
+  var p=stretchToPower(G.stretchFt)/BAR_MAX; /* 0 = bottom(soft) .. 1 = top(firm) */
+  barMark.style.bottom='calc('+(p*100).toFixed(2)+'% - 3px)';
+  barMarkLbl.textContent=Math.round(G.stretchFt)+' FT';
+}
+
 function load(){try{var s=JSON.parse(localStorage.getItem(LS));return s||{days:{}};}catch(e){return{days:{}};}}
 function save(s){try{localStorage.setItem(LS,JSON.stringify(s));}catch(e){}}
 function msToMidnight(nowMs){var d=new Date(nowMs);d.setHours(24,0,0,0);return d.getTime()-nowMs;}
@@ -531,13 +577,14 @@ function esc(s){return String(s).replace(/[&<>"]/g,function(c){return{'&':'&amp;
 var G={
   mode:'daily', greens:[], hole:0,
   putts:0,               /* putts taken on the current hole (cap 6) */
-  phase:'idle',            /* aim | power | roll | drop | done */
-  aimA:null, ballX:0, ballY:0, trail:[], holed:false, holeT:0,
+  phase:'idle',            /* aim | roll | drop | done */
+  aimA:null, stretchFt:20, /* aim direction + line length in feet */
+  dragging:false,
+  ballX:0, ballY:0, trail:[], holed:false, holeT:0,
   ballScale:null,          /* set during the hole-out drop */
   dropT:0, dropFrom:null,
   parts:[],                /* confetti particles (screen space) */
-  meterOn:false, meterT:0, meterM:0,
-  results:[],              /* per hole: {holed, inches} */
+  results:[],              /* per hole: {putts} */
   rolling:null
 };
 
@@ -576,75 +623,76 @@ function startRound(mode){
 
 function startHole(){
   var g=G.greens[G.hole];
-  fitCam(g);
-  G.phase='aim';G.aimA=g.lineA;
+  fitStatic(g);
+  G.phase='aim';
+  G.aimA=g.lineA;
+  G.stretchFt=clamp(g.dist,STRETCH_MIN,STRETCH_MAX);
   G.ballX=g.ball.x;G.ballY=g.ball.y;
-  G.putts=0;
+  G.putts=0;G.dragging=false;
   G.trail=[];G.holed=false;G.holeT=0;G.rolling=null;
-  G.meterOn=false;
-  phaseHint.textContent='Up to 6 putts per green \u2014 fewest total strokes wins. Tap the green to aim; each dot is one tick of power.';
-  phaseBtn.textContent='Lock the line';
-  phaseBtn.classList.remove('hidden');
-  meterWrap.classList.add('hidden');
+  updateBarMark();
+  puttBar.classList.remove('hidden');
+  phaseHint.textContent='Drag the line to aim \u00B7 stretch for distance \u00B7 tap the bar to putt';
+  phaseBtn.classList.add('hidden');
   resultLine.classList.add('hidden');
   renderStrip();
 }
 
-/* ---- input: tap to aim, drag to pan ---- */
-var pdown=null;
+/* ---- input: drag the line to aim + stretch ---- */
+function aimFromPoint(cx,cy){
+  var w=s2w(cx,cy);
+  var dx=w.x-G.ballX,dy=w.y-G.ballY;
+  var d=Math.sqrt(dx*dx+dy*dy);
+  if(d<1.2)return; /* finger basically on the ball: keep the line */
+  G.aimA=Math.atan2(dy,dx);
+  G.stretchFt=clamp(d,STRETCH_MIN,STRETCH_MAX);
+  updateBarMark();
+}
 canvas.addEventListener('pointerdown',function(e){
-  pdown={x:e.clientX,y:e.clientY,t:Date.now(),moved:false};
-  canvas.setPointerCapture(e.pointerId);
+  if(G.phase!=='aim')return;
+  G.dragging=true;
+  try{canvas.setPointerCapture(e.pointerId);}catch(err){}
+  aimFromPoint(e.clientX,e.clientY);
 });
 canvas.addEventListener('pointermove',function(e){
-  if(!pdown)return;
-  var dx=e.clientX-pdown.x,dy=e.clientY-pdown.y;
-  if(Math.abs(dx)+Math.abs(dy)>10)pdown.moved=true;
-  if(pdown.moved){cam.panX=clamp(cam.panX+dx,-cw*0.4,cw*0.4);cam.panY=clamp(cam.panY+dy,-ch*0.4,ch*0.4);pdown.x=e.clientX;pdown.y=e.clientY;}
+  if(!G.dragging||G.phase!=='aim')return;
+  aimFromPoint(e.clientX,e.clientY);
 });
-canvas.addEventListener('pointerup',function(e){
-  if(!pdown)return;
-  var wasTap=!pdown.moved&&(Date.now()-pdown.t<500);
-  pdown=null;
-  if(!wasTap||G.phase!=='aim')return;
-  var w=s2w(e.clientX,e.clientY);
-  var g=G.greens[G.hole];
-  if(!inPoly(w.x,w.y,g.poly))return;
-  var a=Math.atan2(w.y-G.ballY,w.x-G.ballX);
-  if(dist2(w.x,w.y,G.ballX,G.ballY)>0.8)G.aimA=a;
+canvas.addEventListener('pointerup',function(){G.dragging=false;});
+canvas.addEventListener('pointercancel',function(){G.dragging=false;});
+
+/* ---- the vertical touch bar: TAP to strike.
+        bottom = SOFT, top = FIRM. Always visible during every putt. ---- */
+puttBar.addEventListener('pointerdown',function(e){
+  e.preventDefault();
+  if(G.phase!=='aim')return;
+  var r=barTrack.getBoundingClientRect();
+  var frac=1-(e.clientY-r.top)/r.height;
+  /* instant visual feedback (<100ms): the bar flashes */
+  puttBar.classList.add('tapped');
+  setTimeout(function(){puttBar.classList.remove('tapped');},120);
+  strike(tapFracToPower(frac));
 });
 
-/* ---- phase button ---- */
+/* ---- phase button: next hole / results only ---- */
 phaseBtn.addEventListener('click',function(){
-  if(G.phase==='aim'){
-    G.phase='power';G.meterOn=true;G.meterT=0;G.puttArmed=false;
-    phaseHint.textContent='Putt '+(G.putts+1)+' of 6 \u2014 tap PUTT, then STOP at the \u2691 pin.';
-    phaseBtn.textContent='PUTT';
-    meterWrap.classList.remove('hidden');
-    mPin.style.left=(clamp(curPinM(),0,1.12)/1.15*100)+'%';
-  }else if(G.phase==='power'&&G.meterOn){
-    /* tap PUTT once to arm, tap STOP to strike */
-    if(!G.puttArmed){G.puttArmed=true;phaseBtn.textContent='STOP';}
-    else strike();
-  }else if(G.phase==='done'){
-    nextHole();
-  }
+  if(G.phase==='done')nextHole();
 });
 
-function strike(){
+function strike(power){
+  if(G.phase!=='aim')return;
   var g=G.greens[G.hole];
-  var m=G.meterM;
-  G.meterOn=false;
+  var mark=stretchToPower(G.stretchFt);
+  var grade=gradeTap(power,mark);
   G.putts++;
-  var pin=curPinM();
-  var grade=gradeStroke(m,pin);
-  var pure=(grade==='PURE');
-  var res=simulate(g,G.aimA,m,{pure:pure,from:{x:G.ballX,y:G.ballY}});
-  G.phase='roll';G.trail=[];
-  G.rolling={res:res,grade:grade,t:0,shown:0};
+  var res=simulate(g,G.aimA,clamp(power,0,BAR_MAX),
+    {pure:grade==='PURE',from:{x:G.ballX,y:G.ballY}});
+  G.phase='roll';G.trail=[];G.dragging=false;
+  G.rolling={res:res,grade:grade,t:0,shown:0,power:power,mark:mark};
+  puttBar.classList.add('hidden');
   phaseHint.textContent='Rolling\u2026';
   phaseBtn.classList.add('hidden');
-  meterWrap.classList.add('hidden');
+  resultLine.classList.add('hidden');
 }
 
 function finishHole(){
@@ -664,12 +712,13 @@ function finishHole(){
   }
   var dft=dist2(r.x,r.y,g.cup.x,g.cup.y);
   var gc=G.rolling.grade;
-  var gcls=gc==='PURE'?'g-pure':gc==='SOLID'?'g-solid':gc==='EASED'?'g-eased':'g-over';
+  var gcls=gc==='PURE'?'g-pure':gc==='SOLID'?'g-solid':gc==='SOFT'?'g-soft':'g-firm';
   var gradeHtml='<span class="grade '+gcls+'">'+gc+'</span>';
   if(r.holed){
     /* holed: the hole is over, record the putt count */
     G.results[G.hole]={putts:G.putts};
-    resultLine.innerHTML=gradeHtml+'<span style="color:#15803d">HOLED in '+G.putts+'!</span>';
+    resultLine.innerHTML=gradeHtml+'<span style="color:#15803d">HOLED in '+G.putts+'!</span>'+
+      (gc==='PURE'?' Right on the mark.':'');
     showNextHoleUI();
     return;
   }
@@ -681,21 +730,21 @@ function finishHole(){
     return;
   }
   /* putt again from where it lies (real golf) */
-  var along=(r.x-g.ball.x)*Math.cos(g.lineA)+(r.y-g.ball.y)*Math.sin(g.lineA);
   var missTxt=r.plugged?'Plugged in the bunker.':
     r.offGreen?'Off the green.':
     r.lipped?'Lipped out \u2014 too hot.':
-    'Missed \u2014 '+fmtDist(dft)+(along>g.dist?' long.':' short.');
-  resultLine.innerHTML=gradeHtml+missTxt+' \u2014 putt '+(G.putts+1)+' of 6.';
+    'Missed \u2014 '+fmtDist(dft)+(dft>g.dist?' long.':' short.');
+  resultLine.innerHTML=gradeHtml+missTxt;
   resultLine.classList.remove('hidden');
+  /* re-aim from the lie; default line points at the cup at cup distance */
   G.phase='aim';
   G.aimA=Math.atan2(g.cup.y-G.ballY,g.cup.x-G.ballX);
+  G.stretchFt=clamp(dist2(G.ballX,G.ballY,g.cup.x,g.cup.y),STRETCH_MIN,STRETCH_MAX);
   G.trail=[];G.rolling=null;
-  fitCam(g,G.ballX,G.ballY);
-  phaseHint.textContent='Putt '+(G.putts+1)+' of 6 \u2014 from where it lies. Count the dots, match the meter.';
-  phaseBtn.textContent='Lock the line';
-  phaseBtn.classList.remove('hidden');
-  meterWrap.classList.add('hidden');
+  updateBarMark();
+  puttBar.classList.remove('hidden');
+  phaseHint.textContent='Putt '+(G.putts+1)+' of 6 \u2014 drag the line, tap the bar.';
+  phaseBtn.classList.add('hidden');
   renderStrip();
 }
 
@@ -731,12 +780,6 @@ function loop(t){
   nowS=t/1000;
   if(G.greens.length&&G.hole<9){
     var g=G.greens[G.hole];
-    if(G.phase==='power'&&G.meterOn){
-      G.meterT+=dt;
-      var cyc=(G.meterT/3.4)%2;
-      G.meterM=1.15*(1-Math.abs(cyc-1));
-      mNeedle.style.left=(G.meterM/1.15*100)+'%';
-    }
     if(G.phase==='roll'&&G.rolling){
       var rr=G.rolling;
       rr.t+=dt;
@@ -950,16 +993,19 @@ resultsClose.addEventListener('click',function(){
 });
 
 /* ================= boot ================= */
+resize();
 refreshNameBtn();
 refreshStart();
 requestAnimationFrame(loop);
 
 /* test hooks (node) */
 var PuttTest={hashStr:hashStr,mulberry32:mulberry32,genGreens:genGreens,simulate:simulate,
-  gradeStroke:gradeStroke,gradOf:gradOf,inPoly:inPoly,ARCHES:ARCHES,
-  fitCam:fitCam,w2s:w2s,cam:cam,driftDirOf:driftDirOf,DOT_FT:DOT_FT,DOT_N:DOT_N,
-  PANEL_H:PANEL_H,TOP_H:TOP_H,
-  consts:{FRICTION:FRICTION,SLOPE_G:SLOPE_G,CUP_R:CUP_R,V_CAP:V_CAP,DMAX:DMAX}};
+  gradeTap:gradeTap,stretchToPower:stretchToPower,tapFracToPower:tapFracToPower,
+  tapYToPower:tapYToPower,gradOf:gradOf,slopeDirOf:slopeDirOf,inPoly:inPoly,
+  ARCHES:ARCHES,fitStatic:fitStatic,w2s:w2s,s2w:s2w,cam:cam,
+  DOT_FT:DOT_FT,PANEL_H:PANEL_H,TOP_H:TOP_H,
+  consts:{FRICTION:FRICTION,SLOPE_G:SLOPE_G,CUP_R:CUP_R,V_CAP:V_CAP,DMAX:DMAX,
+    BAR_MAX:BAR_MAX,STRETCH_MIN:STRETCH_MIN,STRETCH_MAX:STRETCH_MAX}};
 if(typeof module!=='undefined'&&module.exports)module.exports=PuttTest;
 
 })();
