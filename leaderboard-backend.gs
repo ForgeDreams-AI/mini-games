@@ -1,12 +1,12 @@
 /*****************************************************************
  * MINI GAMES — shared leaderboard backend (canonical multi-game)
- * Games: daily-race, daily-shape, daily-baseball (add new games below)
+ * Games: daily-race, daily-atlas, daily-baseball (add new games below)
  *
  * Tabs (auto-created on first use):
  *   users        — SHARED identity across all mini-games
  *                  username_key | display_name | phrase_hash | created_at
  *   daily-race   — scores: date | username_key | display_name | score | submitted_at
- *   daily-shape  — scores: date | username_key | display_name | score | submitted_at
+ *   daily-atlas  — scores: date | username_key | display_name | score | submitted_at
  *   daily-baseball — scores: date | username_key | display_name | score | submitted_at
  *                  (score is encoded: W*1e6 + (diff+50)*1e4 + runsFor*100 + runsAgainst)
  *
@@ -18,7 +18,7 @@
  *    - Who has access: Anyone
  *    - Deploy, authorize, copy the Web app URL.
  * 4. Paste that URL into each game's LEADERBOARD_URL constant.
- *    daily-shape: games/daily-shape/index.html  (LEADERBOARD_URL)
+ *    daily-atlas: games/daily-atlas/index.html  (LEADERBOARD_URL)
  *    daily-race:  LEADERBOARD_URL in the race game file
  * 5. To add a new game later: add its id to GAME_IDS + BEST_MODE below,
  *    set its LEADERBOARD_URL — no backend changes needed.
@@ -48,13 +48,13 @@
 var TAB_USERS = 'users';
 
 // Game id -> score tab name (tab name = game id by convention)
-var GAME_IDS = ['daily-race', 'daily-shape', 'daily-baseball'];
+var GAME_IDS = ['daily-race', 'daily-atlas', 'daily-baseball'];
 
 // Which score wins per game: 'min' = lower is better (race times),
 // 'max' = higher is better (quiz scores, baseball encoded W/diff).
 var BEST_MODE = {
   'daily-race': 'min',
-  'daily-shape': 'max',
+  'daily-atlas': 'max',
   'daily-baseball': 'max'
 };
 
