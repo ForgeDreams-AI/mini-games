@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Putt-Putt">
+<meta name="theme-color" content="#0f5132">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="../../icons/putt-180.png">
+<title>Putt-Putt</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="wrap">
+  <canvas id="game"></canvas>
+
+  <!-- top HUD -->
+  <div id="hud">
+    <div id="topRow">
+      <a id="homeBtn" href="../..">&#8962;</a>
+      <div id="holeLabel">HOLE 1 / 9</div>
+      <div id="modeTag">DAILY</div>
+    </div>
+    <div id="scoreStrip"></div>
+  </div>
+
+  <!-- the needle: horizontal timing bar. PURE band 82-87 (gold),
+       OVER zone 87-100 (red). STOP JUST UNDER 100.
+       The sweep gets 3% faster every hole. -->
+  <div id="needleBar" class="hidden">
+    <div id="needleTrack">
+      <div id="overZone"></div>
+      <div id="pureBand"></div>
+      <div id="tickLayer"></div>
+      <div id="needle"></div>
+    </div>
+    <div id="tickLabels"></div>
+    <div id="needleNums"><span class="nn0">0</span><span class="nnpure">PURE</span><span class="nnover">OVER</span><span class="nn100">100</span></div>
+    <div id="needleCap">Gold = PURE &middot; red = OVER &mdash; stop just under 100.</div>
+  </div>
+
+  <!-- bottom phase panel -->
+  <div id="panel">
+    <div id="timerPill" class="hidden">&#9201; <span id="timerNum">7</span></div>
+    <div id="phaseHint">Drag the line to aim.</div>
+    <button id="phaseBtn" class="hidden">Next hole</button>
+    <div id="resultLine" class="hidden"></div>
+  </div>
+
+  <!-- start screen -->
+  <div id="startScreen" class="overlay">
+    <h1 class="title">⛳ Putt-Putt</h1>
+    <p class="subtitle">Nine mini-golf holes. Windmills, bumpers, ramps, water. Tap to aim, lock the line, stop the needle in the gold. You get 7 seconds to aim &mdash; then it locks. Fewest strokes wins.</p>
+    <div id="lockBox" class="hidden">
+      <div>Today&rsquo;s 9 are done.</div>
+      <div id="lockTime">0:00:00</div>
+      <div id="lockScore"></div>
+    </div>
+    <button id="playBtn" class="big">Play today&rsquo;s 9</button>
+    <button id="practiceBtn" class="ghost">Practice (random holes)</button>
+    <div class="row">
+      <button id="nameBtn" class="small">name: not set</button>
+      <button id="boardBtn" class="small">leaderboard</button>
+    </div>
+  </div>
+
+  <!-- name claim -->
+  <div id="nameScreen" class="overlay hidden">
+    <h2 class="title2">Leaderboard name</h2>
+    <p class="subtitle" id="nameSub">Claim a name for the daily leaderboard.</p>
+    <input id="nameInput" maxlength="16" placeholder="your name" autocomplete="off">
+    <div id="phraseWrap" class="hidden">
+      <input id="phraseInput" type="password" placeholder="secret phrase (4+ chars)" autocomplete="off">
+    </div>
+    <div id="nameMsg" class="msg"></div>
+    <div class="row">
+      <button id="nameGo" class="big">CHECK NAME</button>
+      <button id="nameCancel" class="ghost">cancel</button>
+    </div>
+  </div>
+
+  <!-- results / leaderboard -->
+  <div id="resultsScreen" class="overlay hidden">
+    <h2 class="title2" id="resTitle">Results</h2>
+    <div id="resScore" class="resScore"></div>
+    <div class="secTitle" id="lbTitle">Today&rsquo;s leaderboard</div>
+    <div id="lbList" class="list"></div>
+    <div class="secTitle">Your recent rounds</div>
+    <div id="histList" class="list"></div>
+    <div class="row">
+      <button id="logoutBtn" class="ghost small">forget name</button>
+      <button id="resultsClose" class="big">Done</button>
+    </div>
+  </div>
+</div>
+<script src="app.js"></script>
+</body>
+</html>
