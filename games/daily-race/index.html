@@ -215,13 +215,18 @@ var SEG_LEN=90, NSEG=150, SAMPLES=4;
 var MAXV=380, ACCEL=640, TURNSPD=3.35;   /* v9: punchy launch acceleration — the car feels fast off the line */
 var LAUNCH_SPD=0.55;                  /* v9: fraction of MAXV the car starts with at GO */
 var CAR_HALF_W=16, BOUNCE_KEEP=0.8, WALL_KICK=0.14;  /* v8: inward bumper kick off walls — a car can never wedge into a curving wall (guide assist alone eases toward the tangent, which points INTO the wall) */
-var CAR_DRAW_S=1.25, TRAFFIC_DRAW_S=1.6;/* v9.1: player car bigger + marker chevron — always findable at a glance next to big traffic */
+var TRAFFIC_DRAW_S=1.6;/* v9.2: traffic sprite scale (world space). The PLAYER car no longer uses
+                      a fixed constant — drawCarScreen computes pcs from cssW so the car
+                      stays proportional on every screen (never tiny on desktop, never
+                      wider than the road on phones). */
 var TRAFFIC_HIT_R=26;                 /* v9: hit radius matches the 1.6x traffic sprite */
 var LANE_W=58;                        /* road width = lane count x lane width */
 var AIR_DUR=0.8, SPIN_DUR=0.6;        /* bomb pop / oil spin durations */
 var SLOW_DUR=1.5, STALL_DUR=1.5;       /* oil slow + bomb stall, seconds */
 var BOOST_DUR=1.2;                    /* boost pad: +40% top speed for this long */
 var TRAFFIC_WOB=6;                    /* traffic wobble amplitude — always stays inside its lane */
+var TRAFFIC_WAKE=48;                  /* v9.2: a traffic car starts moving only once the player is this
+                                       many samples behind it (wake-on-approach — see stepTraffic) */
 function lanesOfZone(z){return [4,3,2][z];}   /* 4 lanes early -> 3 -> 2 at the end */
 var ZONE_NAMES=["Easy stretch","Tight turns","Hazard zone"];
 var ZONE_COLORS=["#22c55e","#eab308","#ef4444"];
@@ -315,7 +320,10 @@ function generateTrack(seedStr){
   }
   /* AI traffic: slower cars in their lanes, denser toward the end — always dodgeable:
      min 5-segment gaps between cars, start area clear.
-     v9.1: density raised ~25% — no more long empty stretches, still fair */
+     v9.1: density raised ~25% — no more long empty stretches, still fair.
+     v9.2: cars start PARKED (moving:false) and wake when the player approaches —
+     previously they drove from t=0 and ~80% reached the finish (despawning
+     unseen) before the player ever caught them. */
   var traffic=[],lastTrafficSeg=-10;
   var TCOLORS=['#ef4444','#f59e0b','#a855f7','#22c55e','#eab308','#f472b6'];
   for(var tm=8;tm<NSEG-2;tm++){
@@ -326,7 +334,7 @@ function generateTrack(seedStr){
       var lane=Math.floor(rng()*nl);
       traffic.push({seg:tm*SAMPLES,lane:lane,off:(lane-(nl-1)/2)*LANE_W,
                     speed:120+rng()*55,color:TCOLORS[Math.floor(rng()*TCOLORS.length)],
-                    wob:rng()*6.283,done:false});
+                    wob:rng()*6.283,done:false,moving:false});
       lastTrafficSeg=tm;
     }
   }
@@ -421,9 +429,25 @@ function stepTraffic(tr,car,dt,t){
   for(var i=0;i<tr.traffic.length;i++){
     var tc=tr.traffic[i];
     if(tc.done)continue;
+    if(!tc.moving){
+      /* v9.2 ROOT-CAUSE FIX — wake-on-approach. Previously every traffic car
+         drove forward from t=0 at 120-175 u/s while the player started at seg 0.
+         The player (avg ~280 u/s) can only catch cars spawned in roughly the
+         front half of the track: the rest reached the finish line first and hit
+         `tc.seg>=tr.NS-2` → done → despawned UNSEEN. Sims counted 23 cars
+         *placed* per track, but a real player only ever met ~4; ~19/race
+         vanished before being seen. Now a car sits parked (still wobbling in
+         its lane, so it looks alive) until the player is TRAFFIC_WAKE samples
+         behind it, then cruises as normal — every placed car is encountered. */
+      if(car.seg>tc.seg-TRAFFIC_WAKE){tc.moving=true;}else{continue;}
+    }
     tc.seg+=tc.speed*dt/(SEG_LEN/SAMPLES);
+    /* pin at the finish instead of despawning: a woken car near the line can
+       still get there first — it waits as a final backmarker to dodge/pass,
+       never vanishes unseen. Cars left behind still despawn. */
+    if(tc.seg>=tr.NS-2){tc.seg=tr.NS-2;}
     if(!tc.counted&&tc.seg<car.seg-8){tc.counted=true;car.stats.overtakes++;}
-    if(tc.seg>=tr.NS-2||tc.seg<car.seg-60){tc.done=true;continue;}
+    if(tc.seg<car.seg-60){tc.done=true;continue;}
     if(t>car.invulnUntil&&t>=car.airUntil){
       var q=trafficXY(tr,tc,t),dx=car.x-q.x,dy=car.y-q.y;
       if(dx*dx+dy*dy<TRAFFIC_HIT_R*TRAFFIC_HIT_R)popBomb(car,t,q.hd);
@@ -1102,9 +1126,13 @@ function drawWheel(x,y,ang){
   ctx.fillStyle='#3b4a61';ctx.fillRect(-2,-5,4,10);
   ctx.restore();
 }
-/* car is drawn in SCREEN space, always pointing straight up — pixel sprite */
+/* car is drawn in SCREEN space, always pointing straight up — pixel sprite.
+   Size is proportional to the window (never tiny on desktop, never wider than
+   the road on phones): the visible body targets 5.5% of screen width,
+   clamped to [42,68] css px. Constant for a given window, every section. */
 function drawCarScreen(){
   var sx=PW/2,sy=PH*0.62;
+  var pcs=Math.max(42,Math.min(68,cssW*0.055))/30;  /* sprite 16px natural, body=10/16, PIX=3 upscale */
   /* oil spin: the car sprite does a full 360 while the world keeps its heading */
   var spinA=0,airH=0;
   if(car&&state==='racing'){
@@ -1116,18 +1144,18 @@ function drawCarScreen(){
      instantly, even mid-pack against the big traffic cars */
   if(car&&state==='racing'){
     var mb=Math.sin(raceT*6)*2;
-    var my=-15*CAR_DRAW_S-9+mb;
+    var my=-15*pcs-9+mb;
     ctx.fillStyle='rgba(34,211,238,0.9)';
     ctx.beginPath();ctx.moveTo(-7,my);ctx.lineTo(7,my);ctx.lineTo(0,my+7);ctx.closePath();ctx.fill();
     ctx.fillStyle='rgba(207,250,254,0.95)';
     ctx.beginPath();ctx.moveTo(-3.5,my+1);ctx.lineTo(3.5,my+1);ctx.lineTo(0,my+4.5);ctx.closePath();ctx.fill();
   }
-  /* chunky pixel shadow: grows and drifts while airborne */
+  /* chunky pixel shadow: grows and drifts while airborne — scaled to match pcs */
   ctx.fillStyle='rgba(0,0,0,'+(0.35-0.15*airH).toFixed(3)+')';
-  var shw=10+10*airH;
-  ctx.fillRect(-shw+2,-13+5*airH,shw*2,26+10*airH);
+  var shk=pcs/1.25, shw=(10+10*airH)*shk;
+  ctx.fillRect(-shw+2*shk,(-13+5*airH)*shk,shw*2,(26+10*airH)*shk);
   var sc=1+0.45*airH;
-  ctx.scale(sc*CAR_DRAW_S,sc*CAR_DRAW_S);
+  ctx.scale(sc*pcs,sc*pcs);
   ctx.rotate(spinA);
   if(carSprite)ctx.drawImage(carSprite,-8,-12);
   /* pixel boost flame */
@@ -1388,7 +1416,7 @@ function render(){
     ctx.fillStyle='rgba(251,191,36,0.95)';
     ctx.font='700 9px "Courier New",monospace';
     ctx.textAlign='center';
-    ctx.fillText('SLOWED -5%',PW/2,PH*0.62-24);
+    ctx.fillText('SLOWED -5%',PW/2,PH*0.62-56);   /* v9.2: clears the bigger car + marker chevron */
   }
 }
 
