@@ -1,6 +1,6 @@
 /*****************************************************************
  * MINI GAMES — shared leaderboard backend (canonical multi-game)
- * Games: daily-race, daily-atlas, daily-baseball (add new games below)
+ * Games: daily-race, daily-atlas, daily-baseball, daily-putt (add new games below)
  *
  * Tabs (auto-created on first use):
  *   users        — SHARED identity across all mini-games
@@ -48,14 +48,15 @@
 var TAB_USERS = 'users';
 
 // Game id -> score tab name (tab name = game id by convention)
-var GAME_IDS = ['daily-race', 'daily-atlas', 'daily-baseball'];
+var GAME_IDS = ['daily-race', 'daily-atlas', 'daily-baseball', 'daily-putt'];
 
-// Which score wins per game: 'min' = lower is better (race times),
+// Which score wins per game: 'min' = lower is better (race times, putt strokes),
 // 'max' = higher is better (quiz scores, baseball encoded W/diff).
 var BEST_MODE = {
   'daily-race': 'min',
   'daily-atlas': 'max',
-  'daily-baseball': 'max'
+  'daily-baseball': 'max',
+  'daily-putt': 'min'
 };
 
 var USERS_HEADERS = ['username_key', 'display_name', 'phrase_hash', 'created_at'];
@@ -130,6 +131,7 @@ function _submit(p) {
 
   if (GAME_IDS.indexOf(game) < 0) return { ok: false, error: 'bad_game' };
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return { ok: false, error: 'bad_date' };
+  if (!/^[0-9a-f]{64}$/.test(hash)) return { ok: false, error: 'bad_hash' };
   if (!isFinite(score)) return { ok: false, error: 'bad_score' };
 
   var lock = LockService.getScriptLock();

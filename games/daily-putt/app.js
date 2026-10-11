@@ -1,6 +1,7 @@
 /* ============================================================
-   DAILY PUTT -- nine greens, one putt each.
-   Original code. Top-down putting, date-seeded daily set.
+   DAILY PUTT -- nine greens, stroke play: up to 6 putts each.
+   Fewest total strokes wins. Original code. Top-down putting,
+   date-seeded daily set.
    ============================================================ */
 (function(){
 'use strict';
@@ -192,11 +193,16 @@ function simulate(green,aimA,powerM,opts){
   var vCap=pureBonus?V_CAP*1.5:V_CAP;
   var cupR=pureBonus?CUP_R*1.15:CUP_R;
   var v0=Math.sqrt(2*FRICTION*DMAX*clamp(powerM,0,1.15));
-  var x=green.ball.x,y=green.ball.y;
+  /* stroke play: putts after the first start from where the ball stopped */
+  var sx=(opts.from&&isFinite(opts.from.x))?opts.from.x:green.ball.x;
+  var sy=(opts.from&&isFinite(opts.from.y))?opts.from.y:green.ball.y;
+  var x=sx,y=sy;
   var vx=Math.cos(aimA)*v0,vy=Math.sin(aimA)*v0;
   var jrng=mulberry32(green.seed^0x9e37);
   var trail=[],maxBreak=0,lipped=false,steps=0,offGreen=false,plugged=false;
-  var lineX=Math.cos(green.lineA),lineY=Math.sin(green.lineA);
+  /* break measured against the putt's own start line, not the tee line */
+  var refA=(opts.from)?Math.atan2(green.cup.y-sy,green.cup.x-sx):green.lineA;
+  var lineX=Math.cos(refA),lineY=Math.sin(refA);
   while(steps++<240*14){
     var sp=Math.sqrt(vx*vx+vy*vy);
     if(sp<V_STOP)break;
@@ -207,7 +213,7 @@ function simulate(green,aimA,powerM,opts){
     sp=Math.sqrt(vx*vx+vy*vy);
     if(sp<V_STOP){vx=vy=0;break;}
     x+=vx*DT;y+=vy*DT;
-    var rx=x-green.ball.x,ry=y-green.ball.y;
+    var rx=x-sx,ry=y-sy;
     var lat=Math.abs(rx*(-lineY)+ry*lineX);
     if(lat>maxBreak)maxBreak=lat;
     if(trail.length===0||dist2(x,y,trail[trail.length-1].x,trail[trail.length-1].y)>0.8)
@@ -251,6 +257,13 @@ function gradeStroke(m,pinM){
   return m<pinM?'EASED':'OVERHIT';
 }
 
+/* pin power for the CURRENT lie: stroke play re-aims from where the
+   ball stopped, so the pin marker is recomputed every putt */
+function curPinM(){
+  var g=G.greens[G.hole];
+  return clamp(dist2(G.ballX,G.ballY,g.cup.x,g.cup.y)/DMAX,0.05,1.12);
+}
+
 /* ================= rendering ================= */
 var canvas=document.getElementById('game'),ctx=canvas.getContext('2d');
 var cw=0,ch=0;
@@ -267,10 +280,11 @@ window.addEventListener('resize',resize);resize();
    keeping at least ~1/3 of the green's extent for context. */
 var PANEL_H=170,TOP_H=110;
 var cam={scale:1,ox:0,oy:0,panX:0,panY:0};
-function fitCam(green){
+function fitCam(green,bx,by){
+  if(bx==null||by==null){bx=green.ball.x;by=green.ball.y;}
   var bb=green.bbox,pad=13;
-  var x0=Math.min(green.ball.x,green.cup.x)-pad, x1=Math.max(green.ball.x,green.cup.x)+pad;
-  var y0=Math.min(green.ball.y,green.cup.y)-pad, y1=Math.max(green.ball.y,green.cup.y)+pad;
+  var x0=Math.min(bx,green.cup.x)-pad, x1=Math.max(bx,green.cup.x)+pad;
+  var y0=Math.min(by,green.cup.y)-pad, y1=Math.max(by,green.cup.y)+pad;
   var hx=Math.max((x1-x0)/2,(bb.x1-bb.x0)*0.32);
   var hy=Math.max((y1-y0)/2,(bb.y1-bb.y0)*0.32);
   var aw=cw-56, ah=ch-PANEL_H-TOP_H-40;
@@ -485,7 +499,7 @@ function drawGreen(green,state){
 /* ================= game state / flow ================= */
 var LEADERBOARD_URL='';
 var GAME_ID='daily-putt';
-var LS='dailyputt.v1';
+var LS='dailyputt.v2';
 
 var holeLabel=document.getElementById('holeLabel'),modeTag=document.getElementById('modeTag'),
     scoreStrip=document.getElementById('scoreStrip'),
@@ -516,6 +530,7 @@ function esc(s){return String(s).replace(/[&<>"]/g,function(c){return{'&':'&amp;
 
 var G={
   mode:'daily', greens:[], hole:0,
+  putts:0,               /* putts taken on the current hole (cap 6) */
   phase:'idle',            /* aim | power | roll | drop | done */
   aimA:null, ballX:0, ballY:0, trail:[], holed:false, holeT:0,
   ballScale:null,          /* set during the hole-out drop */
@@ -533,17 +548,19 @@ function fmtDist(ft){
 }
 
 function renderStrip(){
-  var html='';
+  var html='',cum=0;
   for(var i=0;i<9;i++){
     var r=G.results[i],cls='scell'+(i===G.hole?' cur':'')+(r?' done':'');
-    var mark=r?(r.holed?'<div class="r ok">&#10003;</div>':'<div class="r no">&times;</div>'):'<div class="r">&middot;</div>';
-    var dd=r?('<div class="d">'+(r.holed?'IN':fmtDist(r.ft))+'</div>'):'<div class="d">&nbsp;</div>';
+    if(r)cum+=r.putts;
+    /* live putt count on the current hole, running total under finished ones */
+    var pv=r?r.putts:(i===G.hole&&G.putts>0?G.putts:null);
+    var mark='<div class="r">'+(pv!=null?pv:'&middot;')+'</div>';
+    var dd='<div class="d">'+(r?cum:'&nbsp;')+'</div>';
     html+='<div class="'+cls+'"><div class="n">'+(i+1)+'</div>'+mark+dd+'</div>';
   }
   scoreStrip.innerHTML=html;
-  var done=G.results.filter(Boolean).length;
-  var holed=G.results.filter(function(r){return r&&r.holed;}).length;
-  holeLabel.textContent=(G.hole<9?('HOLE '+(G.hole+1)+' / 9'):'DONE')+'  •  '+holed+'/'+done;
+  var t=totals();
+  holeLabel.textContent=(G.hole<9?('HOLE '+(G.hole+1)+' / 9'):'DONE')+'  •  '+t.strokes+' putts';
 }
 
 function startRound(mode){
@@ -562,9 +579,10 @@ function startHole(){
   fitCam(g);
   G.phase='aim';G.aimA=g.lineA;
   G.ballX=g.ball.x;G.ballY=g.ball.y;
+  G.putts=0;
   G.trail=[];G.holed=false;G.holeT=0;G.rolling=null;
   G.meterOn=false;
-  phaseHint.textContent='Tap the green to aim. Count the dots to the hole \u2014 halves count! Each dot is one tick of power.';
+  phaseHint.textContent='Up to 6 putts per green \u2014 fewest total strokes wins. Tap the green to aim; each dot is one tick of power.';
   phaseBtn.textContent='Lock the line';
   phaseBtn.classList.remove('hidden');
   meterWrap.classList.add('hidden');
@@ -600,10 +618,10 @@ canvas.addEventListener('pointerup',function(e){
 phaseBtn.addEventListener('click',function(){
   if(G.phase==='aim'){
     G.phase='power';G.meterOn=true;G.meterT=0;G.puttArmed=false;
-    phaseHint.textContent='Tap PUTT to start the needle, then STOP it at the \u2691 pin \u2014 that\u2019s your dot count, exactly.';
+    phaseHint.textContent='Putt '+(G.putts+1)+' of 6 \u2014 tap PUTT, then STOP at the \u2691 pin.';
     phaseBtn.textContent='PUTT';
     meterWrap.classList.remove('hidden');
-    mPin.style.left=(clamp(G.greens[G.hole].pinM,0,1.12)/1.15*100)+'%';
+    mPin.style.left=(clamp(curPinM(),0,1.12)/1.15*100)+'%';
   }else if(G.phase==='power'&&G.meterOn){
     /* tap PUTT once to arm, tap STOP to strike */
     if(!G.puttArmed){G.puttArmed=true;phaseBtn.textContent='STOP';}
@@ -617,9 +635,11 @@ function strike(){
   var g=G.greens[G.hole];
   var m=G.meterM;
   G.meterOn=false;
-  var grade=gradeStroke(m,g.pinM);
+  G.putts++;
+  var pin=curPinM();
+  var grade=gradeStroke(m,pin);
   var pure=(grade==='PURE');
-  var res=simulate(g,G.aimA,m,{pure:pure});
+  var res=simulate(g,G.aimA,m,{pure:pure,from:{x:G.ballX,y:G.ballY}});
   G.phase='roll';G.trail=[];
   G.rolling={res:res,grade:grade,t:0,shown:0};
   phaseHint.textContent='Rolling\u2026';
@@ -629,8 +649,8 @@ function strike(){
 
 function finishHole(){
   var g=G.greens[G.hole],r=G.rolling.res;
-  G.phase='done';G.holed=r.holed;G.holeT=0.001;
   G.ballX=r.x;G.ballY=r.y;
+  G.phase='done';G.holed=r.holed;G.holeT=0.001;
   if(r.holed){
     /* confetti burst at the cup (screen space; visual only) */
     var cs=w2s(g.cup.x,g.cup.y);
@@ -643,17 +663,44 @@ function finishHole(){
     }
   }
   var dft=dist2(r.x,r.y,g.cup.x,g.cup.y);
-  var rec={holed:r.holed,ft:dft,inches:Math.round(dft*12)};
-  G.results[G.hole]=rec;
   var gc=G.rolling.grade;
   var gcls=gc==='PURE'?'g-pure':gc==='SOLID'?'g-solid':gc==='EASED'?'g-eased':'g-over';
+  var gradeHtml='<span class="grade '+gcls+'">'+gc+'</span>';
+  if(r.holed){
+    /* holed: the hole is over, record the putt count */
+    G.results[G.hole]={putts:G.putts};
+    resultLine.innerHTML=gradeHtml+'<span style="color:#15803d">HOLED in '+G.putts+'!</span>';
+    showNextHoleUI();
+    return;
+  }
+  if(G.putts>=6){
+    /* six-putt cap: max out and move on */
+    G.results[G.hole]={putts:6};
+    resultLine.innerHTML=gradeHtml+'That\u2019s 6 \u2014 maxed out.';
+    showNextHoleUI();
+    return;
+  }
+  /* putt again from where it lies (real golf) */
   var along=(r.x-g.ball.x)*Math.cos(g.lineA)+(r.y-g.ball.y)*Math.sin(g.lineA);
   var missTxt=r.plugged?'Plugged in the bunker.':
     r.offGreen?'Off the green.':
     r.lipped?'Lipped out \u2014 too hot.':
     'Missed \u2014 '+fmtDist(dft)+(along>g.dist?' long.':' short.');
-  resultLine.innerHTML='<span class="grade '+gcls+'">'+gc+'</span>'+
-    (r.holed?'<span style="color:#15803d">HOLED!</span>':missTxt);
+  resultLine.innerHTML=gradeHtml+missTxt+' \u2014 putt '+(G.putts+1)+' of 6.';
+  resultLine.classList.remove('hidden');
+  G.phase='aim';
+  G.aimA=Math.atan2(g.cup.y-G.ballY,g.cup.x-G.ballX);
+  G.trail=[];G.rolling=null;
+  fitCam(g,G.ballX,G.ballY);
+  phaseHint.textContent='Putt '+(G.putts+1)+' of 6 \u2014 from where it lies. Count the dots, match the meter.';
+  phaseBtn.textContent='Lock the line';
+  phaseBtn.classList.remove('hidden');
+  meterWrap.classList.add('hidden');
+  renderStrip();
+}
+
+/* hole finished (holed or capped at 6): record + offer the next hole */
+function showNextHoleUI(){
   resultLine.classList.remove('hidden');
   phaseHint.textContent=G.hole<8?'On to the next green.':'That\u2019s all nine.';
   phaseBtn.textContent=G.hole<8?'Next hole':'See results';
@@ -671,10 +718,9 @@ function nextHole(){
 }
 
 function totals(){
-  var holed=0,inches=0;
-  for(var i=0;i<G.results.length;i++){var r=G.results[i];if(!r)continue;
-    if(r.holed)holed++;else inches+=r.inches;}
-  return{holed:holed,inches:inches};
+  var s=0,done=0;
+  for(var i=0;i<G.results.length;i++){var r=G.results[i];if(!r)continue;s+=r.putts;done++;}
+  return{strokes:s,done:done};
 }
 
 /* ---- main loop ---- */
@@ -746,8 +792,8 @@ function refreshStart(){
   if(rec&&rec.done&&rec.results.length>=9){
     lockBox.classList.remove('hidden');
     playBtn.classList.add('hidden');
-    var h=0;for(var i=0;i<rec.results.length;i++)if(rec.results[i]&&rec.results[i].holed)h++;
-    lockScore.textContent='Today: '+h+'/9 holed';
+    var s=0;for(var i=0;i<rec.results.length;i++)if(rec.results[i]&&rec.results[i].putts)s+=rec.results[i].putts;
+    lockScore.textContent='Today: '+s+' putts';
     var tick=function(){
       lockTime.textContent=fmtCountdown(msToMidnight(Date.now()));
       setTimeout(tick,1000);
@@ -843,27 +889,27 @@ document.getElementById('nameCancel').addEventListener('click',closeName);
 nameBtn.addEventListener('click',function(){openName(null);});
 logoutBtn.addEventListener('click',function(){clearUser();refreshNameBtn();renderBoard();});
 
-var RES_LS='dailyputt.results';
+var RES_LS='dailyputt.results.v2';
 function loadResults(){try{var a=JSON.parse(localStorage.getItem(RES_LS));return Array.isArray(a)?a:[];}catch(e){return[];}}
 function recordResult(rec){
   var a=loadResults();a.push(rec);
   if(a.length>200)a=a.slice(-200);
   try{localStorage.setItem(RES_LS,JSON.stringify(a));}catch(e){}
 }
-/* score: higher is better -> holed dominates, fewer inches wins ties */
-function scoreOf(t){return t.holed*100000-t.inches;}
 
 function showResults(){
   var t=totals();
   resTitle.textContent=G.mode==='daily'?'Today\u2019s round':'Practice round';
-  resScore.innerHTML=t.holed+'<small>/9 holed</small><br><small>'+t.inches+'&Prime; left on misses</small>';
+  var per=G.results.map(function(r){return r?r.putts:'\u2013';}).join(' \u00B7 ');
+  resScore.innerHTML=t.strokes+'<small> putts</small><br><small>'+per+'</small>';
   resultsScreen.classList.remove('hidden');
   if(G.mode==='daily'){
-    recordResult({date:dateStr(),mode:'daily',holed:t.holed,inches:t.inches});
+    recordResult({date:dateStr(),mode:'daily',strokes:t.strokes,
+      perHole:G.results.map(function(r){return r?r.putts:0;})});
     var doSubmit=function(){
       var u=getUser();
       if(lbOn()&&u&&u.hash)lbPost({action:'submit',game:GAME_ID,date:dateStr(),
-        username:u.name,phrase_hash:u.hash,score:scoreOf(t)});
+        username:u.name,phrase_hash:u.hash,score:t.strokes});
       renderBoard();
     };
     var u0=getUser();
@@ -881,8 +927,7 @@ function renderBoard(){
       var u=getUser(),html='';
       for(var i=0;i<rows.length;i++){
         var r=rows[i],me=u&&r.username===u.name;
-        var h9=Math.floor(r.score/100000),inch=100000-(r.score%100000);
-        html+='<div class="lbRow'+(me?' me':'')+'"><span>#'+(i+1)+' '+esc(r.username)+'</span><span>'+h9+'/9 \u00B7 '+inch+'&Prime;</span></div>';
+        html+='<div class="lbRow'+(me?' me':'')+'"><span>#'+(i+1)+' '+esc(r.username)+'</span><span>'+r.score+' putts</span></div>';
       }
       lbList.innerHTML=html;
     });
@@ -890,7 +935,7 @@ function renderBoard(){
   var hist=loadResults().slice().reverse(),html2='';
   for(var i=0;i<Math.min(12,hist.length);i++){
     var h=hist[i];
-    html2+='<div class="lbRow"><span>'+esc(h.date)+'</span><span>'+h.holed+'/9 \u00B7 '+h.inches+'&Prime;</span></div>';
+    html2+='<div class="lbRow"><span>'+esc(h.date)+'</span><span>'+h.strokes+' putts</span></div>';
   }
   histList.innerHTML=html2||'<div class="lbRow"><span>No rounds yet.</span></div>';
 }

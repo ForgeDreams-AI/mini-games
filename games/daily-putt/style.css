@@ -22,9 +22,8 @@ html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; background: 
 .scell { flex: 1; max-width: 52px; background: rgba(255,255,255,.92); border-radius: 10px; padding: 5px 2px;
   text-align: center; box-shadow: 0 2px 6px rgba(0,0,0,.2); }
 .scell .n { font-size: 10px; font-weight: 700; color: #6b6f7a; }
-.scell .r { font-size: 15px; font-weight: 900; }
-.scell.done .r.ok { color: #15803d; }
-.scell.done .r.no { color: #b91c1c; }
+.scell .r { font-size: 15px; font-weight: 900; color: #20242e; }
+.scell.done .r { color: #15803d; }
 .scell.cur { outline: 3px solid #fbbf24; }
 .scell .d { font-size: 9px; color: #6b6f7a; font-weight: 600; }
 
