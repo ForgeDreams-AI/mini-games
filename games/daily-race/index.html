@@ -36,6 +36,12 @@
   #zone.z1 { border-color: #22c55e; color: #22c55e; }
   #zone.z2 { border-color: #eab308; color: #eab308; }
   #zone.z3 { border-color: #ef4444; color: #ef4444; }
+  #boostHud { margin-top: 6px; }
+  #boostTxt { font-size: 13px; font-weight: 900; letter-spacing: 3px; color: #4ade80;
+    text-shadow: 0 0 12px rgba(74,222,128,.8); }
+  #boostBarBg { height: 6px; background: rgba(20,40,28,.85); margin: 4px 60px 0; border-radius: 3px;
+    overflow: hidden; border: 1px solid rgba(74,222,128,.35); }
+  #boostBar { height: 100%; width: 100%; background: linear-gradient(90deg,#16a34a,#4ade80); border-radius: 3px; }
   #pauseBtn { position: absolute; top: calc(12px + env(safe-area-inset-top)); right: 12px; z-index: 6;
     width: 44px; height: 44px; border-radius: 8px; border: 3px solid #06283a; background: #38bdf8;
     color: #04121f; font-size: 16px; font-weight: 800; display: none; box-shadow: 0 4px 0 #06283a; }
@@ -88,6 +94,8 @@
   .flag { font-size: 12px; letter-spacing: 3px; text-transform: uppercase; color: #f59e0b; margin-top: 6px; }
   /* ---------- results / leaderboard ---------- */
   #resTier { font-size: 32px; font-weight: 900; letter-spacing: 4px; margin-top: 10px; }
+  #resTier.pop { animation: tierPop .55s cubic-bezier(.2,1.5,.35,1); }
+  @keyframes tierPop { 0% { transform: scale(.4); opacity: 0; } 60% { transform: scale(1.12); opacity: 1; } 100% { transform: scale(1); opacity: 1; } }
   #resRank { font-size: 14px; color: #94a3b8; margin-top: 6px; font-family: ui-monospace, Menlo, Consolas, monospace; }
   .tier-POLE{color:#fbbf24;text-shadow:0 0 18px rgba(251,191,36,.5);}
   .tier-FROW{color:#e2e8f0;text-shadow:0 0 14px rgba(226,232,240,.4);}
@@ -115,6 +123,7 @@
     <div id="pbar"><div id="pfill"></div></div>
     <div id="timer">0:00.0</div>
     <div><span id="zone" class="z1">Easy stretch</span></div>
+    <div id="boostHud" class="hidden"><span id="boostTxt">BOOST</span><div id="boostBarBg"><div id="boostBar"></div></div></div>
   </div>
   <button id="pauseBtn" aria-label="Pause">&#10074;&#10074;</button>
   <button id="homeHudBtn" aria-label="All games">&#8962;</button>
@@ -143,8 +152,9 @@
     <button class="btn ghost" id="resultsBtn">Results</button>
     <button class="btn ghost" id="hubBtn">&#8962; ALL GAMES</button>
     <button class="linkBtn" id="nameBtn">driver: not set</button>
-    <p class="howto"><b>Hold the LEFT or RIGHT side of the screen to steer</b> &mdash; your car accelerates on its own and always points up.<br>
-    4 lanes narrow down to 2 &mdash; overtake the slower traffic. Barriers pop you up and stall you, oil spins you out and slows you down. Lowest time wins.<br>One race per day &mdash; the daily locks at midnight.</p>
+    <p class="howto"><b>Hold LEFT / RIGHT to steer</b> &mdash; your car speeds up on its own.<br>
+    <b style="color:#4ade80;">Green pads = boost.</b> Oil spins you out, barriers pop you up and stall you.<br>
+    Thread the glowing gaps, beat your best time. One scored race per day.</p>
   </div>
 
   <div id="resultScreen" class="overlay hidden">
@@ -206,11 +216,13 @@ function normAng(a){while(a>Math.PI)a-=2*Math.PI;while(a<-Math.PI)a+=2*Math.PI;r
 
 var SEG_LEN=90, NSEG=150, SAMPLES=4;
 var MAXV=380, ACCEL=470, TURNSPD=3.35;   /* v7: +13% top speed, nimbler steering */
-var CAR_HALF_W=16, BOUNCE_KEEP=0.8;      /* v7: slimmer player car threads gaps better */
+var CAR_HALF_W=16, BOUNCE_KEEP=0.8, WALL_KICK=0.14;  /* v8: inward bumper kick off walls — a car can never wedge into a curving wall (guide assist alone eases toward the tangent, which points INTO the wall) */
 var CAR_DRAW_S=0.88, TRAFFIC_DRAW_S=1.2;/* v7: smaller player sprite, bigger traffic cars */
+var TRAFFIC_HIT_R=24;                 /* v8: hit radius matches the traffic sprite (was 30 — cars exploded with visible air between sprites) */
 var LANE_W=58;                        /* road width = lane count x lane width */
 var AIR_DUR=0.8, SPIN_DUR=0.6;        /* bomb pop / oil spin durations */
 var SLOW_DUR=1.5, STALL_DUR=1.5;       /* oil slow + bomb stall, seconds */
+var BOOST_DUR=1.2;                    /* boost pad: +40% top speed for this long */
 var GAP_CARW=1.0;                     /* blocker-row gap width in car widths (Monte-Carlo tuned for ≤18% clean-pass) */
 var TRAFFIC_WOB=6;                    /* traffic wobble amplitude — always stays inside its lane */
 function lanesOfZone(z){return [4,3,2][z];}   /* 4 lanes early -> 3 -> 2 at the end */
@@ -313,27 +325,37 @@ function generateTrack(seedStr){
   return {pts:pts,NS:NS,oils:oils,boosts:boosts,blockers:blockers,traffic:traffic,checkpoints:checkpoints,finishSeg:NS-1};
 }
 
-function ptSegDist(px,py,ax,ay,bx,by){
+/* scratch objects: the hot loop never allocates — ptSegDist/queryTrack/trafficXY/rowBarriers
+   all write into these instead of returning fresh objects (60fps GC discipline on phones) */
+var _qd={d:0,cx:0,cy:0,t:0};
+function ptSegDist(px,py,ax,ay,bx,by,out){
   var dx=bx-ax,dy=by-ay,L2=dx*dx+dy*dy;
   var t=L2?((px-ax)*dx+(py-ay)*dy)/L2:0;
   t=clamp(t,0,1);
-  var cxp=ax+dx*t,cyp=ay+dy*t,ddx=px-cxp,ddy=py-cyp;
-  return {d:Math.sqrt(ddx*ddx+ddy*ddy),cx:cxp,cy:cyp,t:t};
+  out.cx=ax+dx*t;out.cy=ay+dy*t;
+  var ddx=px-out.cx,ddy=py-out.cy;
+  out.d=Math.sqrt(ddx*ddx+ddy*ddy);out.t=t;
+  return out;
 }
-/* nearest point on the smooth centerline; lat = signed lateral offset (+ = right of travel) */
+/* nearest point on the smooth centerline; lat = signed lateral offset (+ = right of travel).
+   Returns shared scratch — copy any field you need past the next queryTrack call. */
+var _qb={seg:0,d:0,cx:0,cy:0,w:0,hd:0,lat:0};
 function queryTrack(tr,px,py,fromSeg){
-  var best=null,lo=Math.max(0,fromSeg-4),hi=Math.min(fromSeg+14,tr.NS-1);
+  var out=_qb;
+  out.d=Infinity;
+  var lo=Math.max(0,fromSeg-4),hi=Math.min(fromSeg+14,tr.NS-1);
   for(var s=lo;s<hi;s++){
     var a=tr.pts[s],b=tr.pts[s+1];
-    var q=ptSegDist(px,py,a.x,a.y,b.x,b.y);
-    if(!best||q.d<best.d){
-      var hd=a.hd+(b.hd-a.hd)*q.t;
+    ptSegDist(px,py,a.x,a.y,b.x,b.y,_qd);
+    if(_qd.d<out.d){
+      var hd=a.hd+(b.hd-a.hd)*_qd.t;
       var nx=Math.cos(hd),ny=Math.sin(hd);
-      best={seg:s,d:q.d,cx:q.cx,cy:q.cy,w:a.w+(b.w-a.w)*q.t,hd:hd,
-            lat:(px-q.cx)*nx+(py-q.cy)*ny};
+      out.seg=s;out.d=_qd.d;out.cx=_qd.cx;out.cy=_qd.cy;
+      out.w=a.w+(b.w-a.w)*_qd.t;out.hd=hd;
+      out.lat=(px-_qd.cx)*nx+(py-_qd.cy)*ny;
     }
   }
-  return best;
+  return out;
 }
 function createCar(tr){
   var p=tr.pts[0];
@@ -344,15 +366,16 @@ function createCar(tr){
           finished:false,popped:false,bounced:false};
 }
 /* blocker row geometry: two striped barriers flanking the gap.
-   Returns the two barrier spans {x,y,hd,len} for rendering. */
-function rowBarriers(tr,b){
+   Writes the two barrier spans {x,y,hd,len} into out (shared scratch) for rendering. */
+var _spans=[{x:0,y:0,hd:0,len:0},{x:0,y:0,hd:0,len:0}];
+function rowBarriers(tr,b,out){
   var c=tr.pts[b.seg],H=c.w/2;
   var ex=Math.cos(c.hd),ey=Math.sin(c.hd);
-  function span(a0,a1){
-    var mid=(a0+a1)/2;
-    return {x:c.x+ex*mid,y:c.y+ey*mid,hd:c.hd,len:Math.max(0,a1-a0)};
-  }
-  return [span(-H,b.gap-b.gh),span(b.gap+b.gh,H)];
+  var o0=out[0],o1=out[1];
+  var m0=(-H+b.gap-b.gh)/2,m1=(b.gap+b.gh+H)/2;
+  o0.x=c.x+ex*m0;o0.y=c.y+ey*m0;o0.hd=c.hd;o0.len=Math.max(0,(b.gap-b.gh)-(-H));
+  o1.x=c.x+ex*m1;o1.y=c.y+ey*m1;o1.hd=c.hd;o1.len=Math.max(0,H-(b.gap+b.gh));
+  return out;
 }
 /* true when a car at lateral offset lat clips the row (must thread the gap) */
 function rowHit(b,lat){
@@ -375,10 +398,13 @@ function popBomb(car,t,hd){
   car.x-=Math.sin(th)*24;
   car.y+=Math.cos(th)*24;
 }
-function trafficXY(tr,tc,t){
+var _tq={x:0,y:0,hd:0};   /* shared scratch for trafficXY (no per-frame allocation) */
+function trafficXY(tr,tc,t,out){
+  out=out||_tq;
   var s=clamp(Math.floor(tc.seg),0,tr.NS-1),p=tr.pts[s];
   var off=tc.off+Math.sin(t*0.9+tc.wob)*TRAFFIC_WOB;   /* slight wobble — never leaves its lane */
-  return {x:p.x+Math.cos(p.hd)*off,y:p.y+Math.sin(p.hd)*off,hd:p.hd};
+  out.x=p.x+Math.cos(p.hd)*off;out.y=p.y+Math.sin(p.hd)*off;out.hd=p.hd;
+  return out;
 }
 function stepTraffic(tr,car,dt,t){
   for(var i=0;i<tr.traffic.length;i++){
@@ -389,7 +415,7 @@ function stepTraffic(tr,car,dt,t){
     if(tc.seg>=tr.NS-2||tc.seg<car.seg-60){tc.done=true;continue;}
     if(t>car.invulnUntil&&t>=car.airUntil){
       var q=trafficXY(tr,tc,t),dx=car.x-q.x,dy=car.y-q.y;
-      if(dx*dx+dy*dy<30*30)popBomb(car,t,q.hd);
+      if(dx*dx+dy*dy<TRAFFIC_HIT_R*TRAFFIC_HIT_R)popBomb(car,t,q.hd);
     }
   }
 }
@@ -436,6 +462,11 @@ function stepCar(tr,car,inp,dt,t){
     var tx=Math.sin(q.hd),ty=-Math.cos(q.hd);
     var dot=dx*tx+dy*ty;
     car.hd=Math.atan2(2*dot*tx-dx,-(2*dot*ty-dy));
+    /* inward bumper kick: rotate the reflected heading slightly off the wall.
+       Without this the guide assist (below) eases the heading back to the tangent,
+       which points INTO the wall wherever the track curves — a stable soft-lock
+       (proven: 30/30 no-input cars wedged forever, no steering input could escape). */
+    car.hd-=sgn*WALL_KICK;
     car.speed*=BOUNCE_KEEP;
     car.bounced=true;
     car.guideUntil=t+0.4;   /* wall-guide assist: ease heading back to the track direction */
@@ -444,8 +475,9 @@ function stepCar(tr,car,inp,dt,t){
     car.hd+=normAng(q.hd-car.hd)*Math.min(1,dt*6);
   }
   var i,dx2,dy2;
-  /* oil: full 360° spin — car keeps its forward momentum, brief steering loss, no crash */
-  if(t>=car.oilCd&&t>=car.airUntil){
+  /* oil: full 360° spin — car keeps its forward momentum, brief steering loss, no crash.
+     Respects bomb invulnerability: no chain-hitting during a bomb stall. */
+  if(t>car.invulnUntil&&t>=car.oilCd&&t>=car.airUntil){
     for(i=0;i<tr.oils.length;i++){var o=tr.oils[i];
       if(Math.abs(o.seg-q.seg)<=SAMPLES){
         var c=tr.pts[o.seg],ox=c.x+Math.cos(c.hd)*o.lat*(c.w/2),oy=c.y+Math.sin(c.hd)*o.lat*(c.w/2);
@@ -467,7 +499,7 @@ function stepCar(tr,car,inp,dt,t){
         var c2=tr.pts[u.seg],bx=c2.x+Math.cos(c2.hd)*u.lat*(c2.w/2),by=c2.y+Math.sin(c2.hd)*u.lat*(c2.w/2);
         dx2=car.x-bx;dy2=car.y-by;
         var br=u.w*0.6;
-        if(dx2*dx2+dy2*dy2<br*br){car.boostUntil=t+1.2;break;}
+        if(dx2*dx2+dy2*dy2<br*br){car.boostUntil=t+BOOST_DUR;break;}
       }
     }
   }
@@ -534,6 +566,7 @@ var GAME_ID='daily-race';
 var canvas=document.getElementById('game'),ctx=canvas.getContext('2d');
 var hud=document.getElementById('hud'),timerEl=document.getElementById('timer'),zoneEl=document.getElementById('zone'),
     pfill=document.getElementById('pfill'),pauseBtn=document.getElementById('pauseBtn'),penFlash=document.getElementById('penFlash'),
+    boostHud=document.getElementById('boostHud'),boostBar=document.getElementById('boostBar'),
     steerHint=document.getElementById('steerHint'),touchL=document.getElementById('touchL'),touchR=document.getElementById('touchR'),
     countEl=document.getElementById('count'),startScreen=document.getElementById('startScreen'),resultScreen=document.getElementById('resultScreen'),
     pauseScreen=document.getElementById('pauseScreen'),
@@ -617,6 +650,9 @@ function showTier(tier){
   resTier.textContent=tier;
   resTier.className=tierClass(tier);
   resTier.style.opacity='1';
+  resTier.classList.remove('pop');
+  void resTier.offsetWidth;   /* restart the easeOutBack pop */
+  resTier.classList.add('pop');
 }
 function esc(s){return String(s).replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
 
@@ -746,6 +782,8 @@ var pointers={};              /* pointerId -> 'l' | 'r' */
 var holdL=false,holdR=false;
 var penTimer=null,hintTimer=null;
 var dust=[],dustAcc=0;
+var shakeT=0;                 /* bomb-pop screen shake timer (artist juice) */
+var FIXED=1/120,MAXSTEPS=8;   /* fixed-step physics: the sim is identical on 60Hz and 120Hz phones */
 
 function newTrack(seed){
   track=generateTrack(seed);car=createCar(track);
@@ -1117,6 +1155,10 @@ function render(){
   /* world transform: car pinned at screen (PW/2, PH*0.62) pointing up;
      world rotates by -camHd around the car */
   ctx.translate(PW/2,PH*0.62);
+  if(shakeT>0){   /* bomb-pop shake: sharp kick, decays in ~0.35s */
+    var sm=8*(shakeT/0.35);
+    ctx.translate((Math.random()-0.5)*2*sm,(Math.random()-0.5)*2*sm);
+  }
   ctx.scale(scale,scale);
   ctx.rotate(-camHd);
   ctx.translate(-car.x,-car.y);
@@ -1238,10 +1280,12 @@ function render(){
     ctx.fillRect(-R2*0.7,-R2,R2*1.4,R2*2);
     ctx.fillStyle='#1a1e30';
     ctx.fillRect(-R2*0.7,-R2*0.45,R2*1.4,R2*0.9);
-    ctx.fillStyle='rgba(190,180,255,0.5)';
+    ctx.fillStyle='rgba(190,180,255,0.65)';
     ctx.fillRect(-R2*0.55,-R2*0.5,R2*0.5,2);
-    ctx.fillStyle='rgba(255,255,255,0.65)';
+    ctx.fillStyle='rgba(255,255,255,0.8)';
     ctx.fillRect(-R2*0.5,-R2*0.45,R2*0.22,1);
+    ctx.strokeStyle='rgba(150,140,255,0.55)';ctx.lineWidth=2;
+    ctx.strokeRect(-R2,-R2*0.7,R2*2,R2*1.4);
     ctx.restore();
   }
 
@@ -1265,7 +1309,7 @@ function render(){
   /* blocker rows: chunky pixel barriers with blocky hazard stripes */
   for(j=0;j<track.blockers.length;j++){
     var bl=track.blockers[j];
-    var spans=rowBarriers(track,bl);
+    var spans=rowBarriers(track,bl,_spans);
     for(var sp=0;sp<2;sp++){
       var bs=spans[sp];
       if(bs.len<8||!inR(bs.x,bs.y))continue;
@@ -1285,13 +1329,29 @@ function render(){
       ctx.fillRect(-3,-3,6,6);
       ctx.restore();
     }
+    /* gap marker: pulsing pixel chevron floating just before the gap, pointing at it —
+       the eye reads where to thread ~1s ahead, at full speed (designer requirement) */
+    var bc=track.pts[bl.seg];
+    var gx=bc.x+Math.cos(bc.hd)*bl.gap,gy=bc.y+Math.sin(bc.hd)*bl.gap;
+    if(inR(gx,gy)){
+      var lead=110;
+      var mx=gx-Math.sin(bc.hd)*lead,my=gy+Math.cos(bc.hd)*lead;
+      var pulse=0.5+0.5*Math.sin(raceT*9+j*1.7);
+      ctx.save();ctx.translate(mx,my);ctx.rotate(bc.hd);
+      ctx.globalAlpha=0.55+0.35*pulse;
+      ctx.fillStyle='#7dd3fc';
+      ctx.fillRect(-4,-13,8,4);
+      ctx.fillRect(-8,-9,16,4);
+      ctx.fillRect(-12,-5,24,4);
+      ctx.restore();ctx.globalAlpha=1;
+    }
   }
 
   /* AI traffic: pixel cars cruising their lanes, slower than the player */
   for(j=0;j<track.traffic.length;j++){
     var tc=track.traffic[j];
     if(tc.done)continue;
-    var tq=trafficXY(track,tc,raceT);
+    var tq=trafficXY(track,tc,raceT,_tq);
     if(!inR(tq.x,tq.y))continue;
     var spr=trafficSprites[tc.color];
     if(!spr)continue;
@@ -1327,22 +1387,32 @@ function render(){
   /* oil-slow cue */
   if(car&&state==='racing'&&raceT>=car.spinUntil&&raceT<car.slowUntil){
     ctx.fillStyle='rgba(251,191,36,0.95)';
-    ctx.font='700 7px "Courier New",monospace';
+    ctx.font='700 9px "Courier New",monospace';
     ctx.textAlign='center';
-    ctx.fillText('SLOWED -5%',PW/2,PH*0.62-22);
+    ctx.fillText('SLOWED -5%',PW/2,PH*0.62-24);
   }
 }
 
 /* ---------- main loop ---------- */
-var lastTs=0;
+var lastTs=0,acc=0;
 function loop(ts){
   requestAnimationFrame(loop);
   var dt=Math.min((ts-lastTs)/1000||0,0.05);lastTs=ts;
   if(state==='racing'&&track&&car){
-    raceT+=dt;
-    stepCar(track,car,input,dt,raceT);
-    if(car.popped){car.popped=false;flashPop();}
-    if(car.bounced){car.bounced=false;puff(car.x,car.y,0,0,8,90,0.6,9);}
+    /* fixed-timestep physics: accumulate real time, step the sim at 120Hz.
+       Same inputs -> same trajectory on every device and frame rate. */
+    acc+=dt;
+    var n=0;
+    while(acc>=FIXED&&n<MAXSTEPS){
+      raceT+=FIXED;
+      stepCar(track,car,input,FIXED,raceT);
+      if(car.popped){car.popped=false;flashPop();shakeT=0.35;}
+      if(car.bounced){car.bounced=false;puff(car.x,car.y,0,0,8,90,0.6,9);}
+      acc-=FIXED;n++;
+      if(car.finished)break;
+    }
+    if(n===MAXSTEPS)acc=0;   /* shed backlog after a long hitch — no spiral of death */
+    if(shakeT>0)shakeT=Math.max(0,shakeT-dt);
     /* camera: ease the world rotation toward the car's heading */
     camHd+=normAng(car.hd-camHd)*Math.min(1,dt*7);
     /* tire dust when steering hard at speed */
@@ -1364,6 +1434,10 @@ function loop(ts){
     var z=track.pts[Math.min(car.seg,track.NS-1)].zone;
     zoneEl.textContent=ZONE_NAMES[z]+'  \u00B7  '+pct+'%';
     zoneEl.className='z'+(z+1);
+    /* boost HUD: countable power — the bar shows exactly how much boost is left */
+    var bRem=car.boostUntil-raceT;
+    if(bRem>0){boostHud.classList.remove('hidden');boostBar.style.width=Math.max(0,100*bRem/BOOST_DUR)+'%';}
+    else boostHud.classList.add('hidden');
     if(car.finished)finishRace();
   }
   var ci;
