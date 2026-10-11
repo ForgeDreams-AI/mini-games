@@ -541,9 +541,9 @@ function tinted(src,color,alpha){
 /* scene geometry, tuned to img/field.jpg (960x600) */
 var L={
   mound:{x:480,y:300}, release:{x:480,y:252}, plate:{x:480,y:548},
-  batter:{x:404,y:542,h:134}, catcher:{x:480,y:594,h:62},
+  batter:{x:404,y:542,h:120}, catcher:{x:480,y:594,h:62},
   zone:{x:430,y:416,w:100,h:118}, mitt:{x:480,y:494},
-  fielders:[{x:350,y:254},{x:562,y:244},{x:800,y:304},{x:160,y:304},
+  fielders:[{x:338,y:276},{x:578,y:276},{x:800,y:304},{x:160,y:304},
             {x:250,y:150},{x:480,y:118},{x:710,y:150}],
   runnerDot:{1:{x:890,y:270},2:{x:480,y:206},3:{x:70,y:270}},
   hitSpot:{'1B':{x:800,y:332},'2B':{x:600,y:232},'3B':{x:350,y:200},'HR':{x:480,y:84},
@@ -551,9 +551,9 @@ var L={
 };
 var HITCALL={'1B':'SINGLE!','2B':'DOUBLE!','3B':'TRIPLE!','HR':'HOME RUN!'};
 function preloadField(){
-  fi('field','img/field.jpg'); fi('pitcher','img/pitcher.png');
-  fi('batter','img/batter.png'); fi('swingmid','img/swing-mid.png');
-  fi('swingfollow','img/swing-follow.png'); fi('swingwhiff','img/swing-whiff.png');
+  fi('field','img/field.jpg'); fi('pitcher','img/cut_pitcher.png');
+  fi('batter','img/cut_batter.png'); fi('swingmid','img/cut_swing-mid.png');
+  fi('swingfollow','img/cut_swing-follow.png'); fi('swingwhiff','img/cut_swing-whiff.png');
 }
 function fielderImg(){
   if(FIMG.fielder)return FIMG.fielder;
@@ -694,7 +694,7 @@ function drawField(now){
   var px=L.mound.x,py=L.mound.y;
   if(V.windupT){var w=Math.min(1,(now-V.windupT)/450);py-=Math.abs(Math.sin(w*Math.PI))*14;}
   var pro=reactOff('P',now);px+=pro.dx;py+=pro.dy;
-  drawSprite(FIMG.pitcher,px,py,112,false);
+  drawSprite(FIMG.pitcher,px,py,84,false);
   /* catcher */
   drawSprite(fim,L.catcher.x,L.catcher.y,L.catcher.h,false);
   /* mitt pop */
