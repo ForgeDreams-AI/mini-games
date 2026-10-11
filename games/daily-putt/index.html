@@ -27,13 +27,16 @@
     <div id="scoreStrip"></div>
   </div>
 
-  <!-- vertical touch bar: tap to strike. bottom = SOFT, top = FIRM -->
-  <div id="puttBar" class="hidden">
-    <div class="barLbl">FIRM</div>
-    <div id="barTrack">
-      <div id="barMark"><span id="barMarkLbl">24 FT</span></div>
+  <!-- the needle: horizontal timing bar. PURE band 82-87 (gold),
+       OVER zone 87-100 (red). STOP JUST UNDER 100. -->
+  <div id="needleBar" class="hidden">
+    <div id="needleTrack">
+      <div id="overZone"></div>
+      <div id="pureBand"></div>
+      <div id="needle"></div>
     </div>
-    <div class="barLbl">SOFT</div>
+    <div id="needleNums"><span class="nn0">0</span><span class="nnpure">PURE</span><span class="nnover">OVER</span><span class="nn100">100</span></div>
+    <div id="needleCap">Stop the needle in the gold &mdash; just under 100.</div>
   </div>
 
   <!-- bottom phase panel -->
@@ -46,7 +49,7 @@
   <!-- start screen -->
   <div id="startScreen" class="overlay">
     <h1 class="title">⛳ Daily Putt</h1>
-    <p class="subtitle">Nine greens. Up to 6 putts each. Fewest total strokes wins.<br>Drag the line to aim &mdash; stretch it for distance &mdash; then tap the bar: bottom is soft, top is firm.</p>
+    <p class="subtitle">Nine greens. Par 2s and 3s. Tap the green to place your marker, lock the line, then stop the needle in the gold. Fewest strokes vs par wins.</p>
     <div id="lockBox" class="hidden">
       <div>Today&rsquo;s 9 are done.</div>
       <div id="lockTime">0:00:00</div>
