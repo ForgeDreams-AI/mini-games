@@ -76,6 +76,18 @@
                 font-size:10px; font-weight:800; color:#9aa0ad; letter-spacing:.08em; }
   #meterbtn { margin:8px 0 0; padding:14px; font-size:18px; }
   .btn-swing { background:#c62f2f; color:#fff; }
+  /* spot picker: 3x3 over the behind-catcher scene (boxes vanish after the pick) */
+  #spotwrap { position:absolute; left:8px; right:8px; top:34%; background:rgba(255,255,255,.96);
+              border-radius:16px; padding:12px 12px 10px; display:none;
+              box-shadow:0 4px 18px rgba(0,0,0,.18); }
+  #spothead { text-align:center; font-weight:800; font-size:15px; margin:0 0 2px; color:#20242e; }
+  #spotsub { text-align:center; font-size:12px; color:#6b6f7a; margin:0 0 8px; }
+  #spotgrid { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; }
+  .spot { border:2px solid #e9e4d8; background:#fff; border-radius:12px; padding:14px 4px;
+          font-size:15px; font-weight:800; color:#6b6f7a; cursor:pointer; }
+  .spot small { display:block; font-size:10px; font-weight:600; color:#9aa0ad; margin-top:2px; }
+  .spot.corner { border-color:#c62f2f; color:#c62f2f; }
+  .spot:active { transform:scale(.95); border-color:#20242e; }
 
   #gamelog { min-height:66px; font-size:14px; color:#3a3e48; }
   #gamelog div { padding:3px 0; border-bottom:1px dashed #e9e4d8; }
@@ -123,7 +135,7 @@
     </div>
     <div class="card">
       <p class="note" style="text-align:left"><b>How it plays</b><br>
-      • You pitch the top of each inning: pick a pitch, then STOP the needle in the green — where the green sits is where the pitch goes. Corners are nasty, middle gets crushed.<br>
+      • You pitch the top of each inning from behind the catcher: choose a pitch, pick your spot, then STOP the needle in the gold — the gold sits somewhere random every pitch. Paint it and he's got no chance; miss and it's hittable or a ball.<br>
       • You bat the bottom: SWING when the needle hits the green. Right in the green = crushed. Early or late = weak contact or a whiff.<br>
       • Win = more runs than the CPU. Ties count as a loss.<br>
       • One shot at the daily per day. Resets at midnight.</p>
@@ -151,6 +163,11 @@
       <div id="chipwrap">
         <p id="chiphead"><b>Choose your pitch</b></p>
         <div id="pitchchips"></div>
+      </div>
+      <div id="spotwrap">
+        <p id="spothead">Pick your spot</p>
+        <p id="spotsub">corners are nasty <span style="color:#c62f2f">■</span>, middle gets crushed</p>
+        <div id="spotgrid"></div>
       </div>
       <div id="meterwrap">
         <p class="note" style="margin:0 0 6px" id="meter-label"><b>Stop the needle in the green!</b></p>
@@ -232,7 +249,9 @@ BB.makeDaily=function(dateStr){
   var batters=tiers.map(function(t,i){
     var nm; do{ nm=BB.FIRST[Math.floor(rand()*BB.FIRST.length)]+' '+BB.LAST[Math.floor(rand()*BB.LAST.length)]; }while(usedNames[nm]); usedNames[nm]=1;
     var k = t==='E' ? 85+rand()*10 : t==='M' ? 65+rand()*15 : 30+rand()*40;
-    return {name:nm,tier:t,k:Math.round(k*10)/10,slot:i+1};
+    /* screen side in the behind-catcher view: 'L' = batter stands screen-left
+       (faces right toward the plate), 'R' = screen-right. Date-seeded. */
+    return {name:nm,tier:t,k:Math.round(k*10)/10,slot:i+1,side:rand()<0.5?'L':'R'};
   });
   return {date:dateStr,pitches:pitches,batters:batters};
 };
@@ -291,26 +310,20 @@ BB.meterParams=function(kind,S,pitchName,sameStreak){
   return {speed:spd,half:half,stars:stars,tags:tags,zoneF:zone};
 };
 
-/* ---- moving sweet-spot bands (seeded: same date = same bands for everyone) ----
-   PITCHING: the catcher calls a location. Column 0..4 = corner/edge/middle/edge/corner.
-   The green band IS the called spot: its position on the meter is where the pitch should
-   go. Corners get a narrow band (hard, best K chance), middle gets a wide one (easy,
-   but crushable) — risk/reward is in the geometry, readable at a glance.
-   BATTING: the green band is the moment the pitch arrives. Faster pitches sit further
-   along the sweep. Band geometry comes from st.bandRand, drawn once per pitch/AB in
-   game order (via BB.pitchBand / BB.batBand), so every player on the same date sees
-   the same bands in the same order. */
-BB.BAND_COLS=[ /* meter span + base halfwidth per column */
-  {a:0.02,b:0.24,w:0.040},{a:0.24,b:0.42,w:0.058},{a:0.42,b:0.58,w:0.085},
-  {a:0.58,b:0.76,w:0.058},{a:0.76,b:0.98,w:0.040}];
+/* ---- sweet-spot bands (seeded: same date = same bands for everyone) ----
+   PITCHING: the gold band sits at a RANDOM spot on the meter each pitch —
+   you never know where "painted" is until the meter appears. Hit the gold
+   and the pitch is unhittable; miss it and the pitch is hittable or a ball,
+   scaled by how far off you were. Band geometry comes from st.bandRand,
+   drawn once per pitch in game order (via BB.pitchBand), so every player on
+   the same date sees the same gold positions in the same order.
+   BATTING: the green band is the moment the pitch arrives. Faster pitches sit
+   further along the sweep. */
 BB.nextBand=function(bandRand,kind,zoneF,pitch,sameStreak){
   if(kind==='pitch'){
-    var r=bandRand(), col= r<0.20?0 : r<0.42?1 : r<0.58?2 : r<0.80?3 : 4;
-    var C=BB.BAND_COLS[col];
-    var c=C.a+bandRand()*(C.b-C.a);
-    var w=Math.max(C.w*zoneF*(1-0.06*(sameStreak||0)),0.028);
-    w=Math.min(w,(C.b-C.a)/2*0.9);
-    return {kind:'pitch',col:col,c:c,w:w};
+    var c=0.08+bandRand()*0.84; /* random gold position every pitch */
+    var w=BB.clamp(0.052*zoneF*(1-0.05*(sameStreak||0)),0.034,0.070);
+    return {kind:'pitch',c:c,w:w};
   }
   /* bat: green = pitch arrival moment; faster pitch = further along the sweep */
   var c2=0.10+bandRand()*0.80;
@@ -330,17 +343,14 @@ BB.batBand=function(st,pitch){
   return {band:BB.nextBand(st.bandRand,'bat',P.half,pitch,0),mp:P};
 };
 /* needle stop -> result. pos 0..1, rising = sweep direction (for early/late).
-   PITCH: the stop COLUMN is where the pitch goes (drift is visible); distance
-   from band center = execution -> acc + quality word.
+   PITCH: the gold sits at a random spot; err = distance from gold center, and
+   q grades execution: bullseye (painted — unhittable) / green / close / wild.
+   Where the pitch goes comes from the 3x3 spot pick, not the needle.
    BAT: err/side feed the causal outcome table in resolveBat. */
 BB.meterResult=function(band,pos,rising){
   var err=Math.abs(pos-band.c);
-  if(band.kind==='pitch'){
-    var target=pos<0.24?0:pos<0.42?1:pos<0.58?2:pos<0.76?3:4;
-    var acc=BB.clamp(1-err/(2.5*band.w),0,1);
-    var q= err<=band.w/2?'bullseye' : err<=band.w?'green' : err<=2.5*band.w?'close':'wild';
-    return {target:target,acc:acc,err:err,q:q,w:band.w};
-  }
+  var q= err<=band.w/2?'bullseye' : err<=band.w?'green' : err<=2.5*band.w?'close':'wild';
+  if(band.kind==='pitch') return {err:err,q:q,w:band.w};
   var side;
   if(err<=1e-9)side=0;
   else if(rising)side=pos<band.c?-1:1;   /* stopped before reaching = early */
@@ -348,34 +358,53 @@ BB.meterResult=function(band,pos,rising){
   return {err:err,side:side,w:band.w};
 };
 
-/* one pitch by the player. res = BB.meterResult for the called band.
-   target 0..4 from the needle's stop column; acc from execution.
-   returns event (with plain-words call/why for the UI); mutates st. */
-BB.resolvePitch=function(rand,batter,pitch,target,acc,streak){
-  var corner=(target===0||target===4);
-  var locF = target===2 ? 0.75 : (corner?1.15:1.0);
-  var timeF = acc>=0.9?1.1 : acc>=0.7?1.0 : acc>=0.5?0.9 : 0.75;
-  var predF = Math.max(0.7, 1-0.05*streak);
-  var keff = BB.clamp(batter.k/100*locF*timeF*predF, 0.02, 0.98);
-  var ballP = (1-acc)*0.6*(target===2?0.35:1);
+/* one pitch by the player. spot = 3x3 pick (0..8: 0=TL corner … 4=middle … 8=BR
+   corner); q = execution grade vs the randomly-placed gold (bullseye/green/
+   close/wild). Gold = painted, unhittable. Miss the gold and the pitch is
+   hittable or a ball, scaled by how far off you were. Corners are nasty
+   (K boost), middle gets crushed (hit boost). Returns event; mutates st. */
+BB.pickOut=function(rand){
+  var outs=['groundout','flyout','lineout'];
+  return outs[Math.floor(rand()*3)];
+};
+BB.hitKindEv=function(rand,meat){
+  var d = meat ? [0.45,0.25,0.08,0.22] : [0.62,0.20,0.05,0.13];
+  var q=rand(),cum=0,kind='1B';
+  var kinds=['1B','2B','3B','HR'];
+  for(var i=0;i<4;i++){cum+=d[i];if(q<cum){kind=kinds[i];break;}}
+  return {type:'hit',kind:kind};
+};
+BB.resolvePitch=function(rand,batter,pitch,spot,q){
+  var corner=(spot===0||spot===2||spot===6||spot===8);
+  var locK = corner?1.25 : spot===4?0.70 : 1.0;   /* corners nasty, middle crushable */
+  var locH = corner?0.75 : spot===4?1.40 : 1.0;
+  var kbase=BB.clamp(batter.k/100,0.02,0.98);
   var ev=null;
-  if(rand()<ballP && rand()>=0.12){ ev={type:'ball'}; }
-  if(!ev){
+  if(q==='bullseye'){
+    /* painted the gold — unhittable */
+    if(rand()<0.94) ev={type:'strike',swinging:rand()<0.6};
+    else ev={type:'foul'};
+  }else if(q==='green'){
+    var keff=BB.clamp(kbase*locK*1.05,0.02,0.98);
     var r=rand();
-    if(r<keff){ ev={type:'strike',swinging:acc>=0.5}; }
+    if(r<0.12) ev={type:'ball'};
+    else if(r<0.12+0.88*keff) ev={type:'strike',swinging:rand()<0.5};
+    else if(rand()<0.45*locH) ev=BB.hitKindEv(rand,false);
+    else ev={type:'out',how:BB.pickOut(rand)};
+  }else if(q==='close'){
+    /* missed the spot — hittable or a ball */
+    var r2=rand();
+    if(r2<0.45) ev={type:'ball'};
     else{
-      var hitP = acc>=0.85?0.55 : acc>=0.65?0.42 : acc>=0.45?0.30 : 0.18;
-      if(rand()<hitP){
-        var d = acc>=0.85 ? [0.55,0.22,0.05,0.18] : [0.65,0.18,0.04,0.13];
-        var q=rand(),cum=0,kind='1B';
-        var kinds=['1B','2B','3B','HR'];
-        for(var i=0;i<4;i++){cum+=d[i];if(q<cum){kind=kinds[i];break;}}
-        ev={type:'hit',kind:kind};
-      }else{
-        var outs=['groundout','flyout','lineout'];
-        ev={type:'out',how:outs[Math.floor(rand()*3)]};
-      }
+      var keff2=BB.clamp(kbase*locK*0.7,0.02,0.98);
+      if(rand()<keff2) ev={type:'strike',swinging:true};
+      else if(rand()<0.55*locH) ev=BB.hitKindEv(rand,false);
+      else ev={type:'out',how:BB.pickOut(rand)};
     }
+  }else{
+    /* wild — mostly a ball, sometimes a grooved meatball */
+    if(rand()<0.70) ev={type:'ball'};
+    else ev=BB.hitKindEv(rand,true);
   }
   return ev;
 };
@@ -446,14 +475,15 @@ BB.newGame=function(daily,mode){
 BB.currentBatter=function(st){
   return st.daily.batters[(st.inning-1)*3+st.pa];
 };
-/* player pitches; band = BB.pitchBand(st,pitchIdx), res = BB.meterResult(band,pos,rising).
+/* player pitches; band = BB.pitchBand(st,pitchIdx) (random gold position),
+   spot = 3x3 pick (0..8), res = BB.meterResult(band,pos,rising) = {err,q,w}.
    returns {event, paOver, halfOver, gameOver} */
-BB.playerPitch=function(st,pitchIdx,band,res){
+BB.playerPitch=function(st,pitchIdx,spot,band,res){
   var P=st.daily.pitches[pitchIdx];
   st.sameStreak = (pitchIdx===st.lastPitch)? st.sameStreak+1 : 0;
   st.lastPitch=pitchIdx; st.pitchCount++;
-  var ev=BB.resolvePitch(st.rand,BB.currentBatter(st),P,res.target,res.acc,st.sameStreak);
-  ev.pitch=P; ev.q=res.q;
+  var ev=BB.resolvePitch(st.rand,BB.currentBatter(st),P,spot,res.q);
+  ev.pitch=P; ev.q=res.q; ev.spot=spot;
   var paOver=false;
   if(ev.type==='ball'){ st.count.b++;
     if(st.count.b>=4){ var r=BB.advance(st.bases,'BB'); st.bases=r.bases; st.cpu+=r.runs; ev.walk=true; paOver=true; }
@@ -496,8 +526,8 @@ BB.decScore=function(s){ s=Math.floor(s); var win=Math.floor(s/1000000); var res
 BB.fmtScore=function(s){ var x=BB.decScore(s); return (x.win?'W':'L')+' '+x.rf+'–'+x.ra; };
 
 /* deterministic full-game sim for tests.
-   driver: {pitch(ctx,rand)->{p}, aim(ctx,band,rand)->{pos,rising},
-            bat(ctx,band,rand)->{pos,rising}}.
+   driver: {pitch(ctx,rand)->{p}, spot(ctx,rand)->{spot},
+            aim(ctx,band,rand)->{pos,rising}, bat(ctx,band,rand)->{pos,rising}}.
    The driver sees the band (like the player does) and picks a needle stop. */
 BB.simGame=function(dateStr,driver){
   var st=BB.newGame(BB.makeDaily(dateStr),'daily');
@@ -507,10 +537,11 @@ BB.simGame=function(dateStr,driver){
     if(st.half==='top'){
       var ctx={batter:BB.currentBatter(st),count:{b:st.count.b,s:st.count.s},inning:st.inning};
       var pk=driver.pitch(ctx,rand).p;
+      var sp=driver.spot(ctx,rand).spot;
       var pb=BB.pitchBand(st,pk);
       var am=driver.aim(ctx,pb.band,rand);
       var res=BB.meterResult(pb.band,am.pos,am.rising!==false);
-      var r=BB.playerPitch(st,pk,pb.band,res);
+      var r=BB.playerPitch(st,pk,sp,pb.band,res);
       if(r.halfOver && BB.endHalf(st)) break;
     } else {
       var p=st.daily.pitches[Math.floor(rand()*3)];
@@ -606,7 +637,7 @@ setInterval(function(){ if(el('screen-menu').classList.contains('on')&&dailyLock
   var c=el('daily-countdown'); if(c)c.textContent=fmtCountdown(msToMidnight()); } },1000);
 
 /* ---------- game view state ---------- */
-var S=null, V={phase:null,selPitch:0,selTarget:2,meter:null,batPitch:null,mittX:null,
+var S=null, V={phase:null,cam:'mound',selPitch:0,selSpot:4,meter:null,batPitch:null,mittX:null,
   seq:[],ball:null,swing:null,windupT:0,mittT:0,converge:null,react:null,ping:null,finishPitch:null};
 function log(msg){var L=el('gamelog');var d=document.createElement('div');d.innerHTML=msg;
   L.insertBefore(d,L.firstChild);while(L.children.length>4)L.removeChild(L.lastChild);}
@@ -640,6 +671,122 @@ var L={
            'groundout':{x:650,y:362},'flyout':{x:480,y:180},'lineout':{x:620,y:262}}
 };
 var HITCALL={'1B':'SINGLE!','2B':'DOUBLE!','3B':'TRIPLE!','HR':'HOME RUN!'};
+/* ================= BEHIND-THE-CATCHER CAMERA (pitching) =================
+   The viewer never leaves this angle during a pitch: catcher big in the
+   foreground, batter to the LEFT or RIGHT of the plate (by handedness,
+   date-seeded), pitcher small on the distant mound. The ball comes AT the
+   camera and grows as it arrives. */
+var CV={
+  sky:{y1:44},
+  stands:{y0:44,y1:150},
+  grass:{y0:140,y1:400},
+  wall:{y0:348,y1:380},
+  dirt:{x:480,y:452,rx:345,ry:128},
+  mound:{x:480,y:336,rx:74,ry:22},
+  pitcher:{x:480,y:340,h:66},
+  release:{x:480,y:304},
+  plate:{x:480,y:494},
+  zone:{x:412,y:400,w:136,h:96},
+  catcher:{x:480,y:652,h:268},
+  mitt:{x:480,y:568},
+  batterL:{x:286,y:534,h:182,flip:true},   /* faces right, toward the plate */
+  batterR:{x:674,y:534,h:182,flip:false},  /* faces left, toward the plate */
+  spotDX:[-44,0,44],
+  fans:[{x:120,y:96,f:0},{x:230,y:88,f:1},{x:340,y:96,f:2},{x:450,y:88,f:0},
+        {x:560,y:96,f:1},{x:670,y:88,f:2},{x:780,y:96,f:0},{x:880,y:92,f:1}],
+  hitSpot:{'1B':{x:705,y:295},'2B':{x:585,y:220},'3B':{x:375,y:220},'HR':{x:480,y:112},
+           'groundout':{x:635,y:395},'flyout':{x:480,y:205},'lineout':{x:615,y:325}}
+};
+function cvPitchPos(b,p){
+  var F=b.F, late=Math.max(0,(p-0.55)/0.45); late*=late;
+  return {
+    x: CV.release.x + ((b.mittX==null?CV.mitt.x:b.mittX)-CV.release.x)*p + F.cut*late*3,
+    y: CV.release.y + (CV.mitt.y-CV.release.y)*p - F.arc*Math.sin(Math.PI*p)*1.3 + F.drop*late*1.3,
+    r: 4+9*p
+  };
+}
+function cvBattedPos(b,p){
+  return {
+    x:b.from.x+(b.to.x-b.from.x)*p,
+    y:b.from.y+(b.to.y-b.from.y)*p-b.arc*Math.sin(Math.PI*p),
+    r:Math.max(3.5,11-7*p)
+  };
+}
+function drawCatcherView(now){
+  fx.save();
+  fx.clearRect(0,0,FW,FH);
+  /* sky */
+  var sky=fx.createLinearGradient(0,0,0,CV.sky.y1);
+  sky.addColorStop(0,'#7ec8f2');sky.addColorStop(1,'#bfe6fa');
+  fx.fillStyle=sky;fx.fillRect(0,0,FW,CV.sky.y1);
+  /* stands */
+  fx.fillStyle='#3a4a63';fx.fillRect(0,CV.stands.y0,FW,CV.stands.y1-CV.stands.y0);
+  fx.fillStyle='#2e3c52';
+  for(var sx=0;sx<FW;sx+=120)fx.fillRect(sx,CV.stands.y0,10,CV.stands.y1-CV.stands.y0);
+  var fanImgs=['fan1','fan2','fan3'];
+  var wild=V.crowdT&&(now-V.crowdT)<1400;
+  for(var fi3=0;fi3<CV.fans.length;fi3++){
+    var fan=CV.fans[fi3];
+    var fbob=Math.sin(now/(wild?200:700)+fi3*2.3)*(wild?7:2);
+    drawSprite(FIMG[fanImgs[fan.f]],fan.x,fan.y+fbob,34,false);
+  }
+  /* grass */
+  var gr=fx.createLinearGradient(0,CV.grass.y0,0,CV.grass.y1);
+  gr.addColorStop(0,'#5da24f');gr.addColorStop(1,'#4c9440');
+  fx.fillStyle=gr;fx.fillRect(0,CV.grass.y0,FW,CV.grass.y1-CV.grass.y0);
+  /* outfield wall */
+  fx.fillStyle='#2f6b2f';fx.fillRect(0,CV.wall.y0,FW,CV.wall.y1-CV.wall.y0);
+  fx.fillStyle='rgba(255,255,255,.25)';fx.fillRect(0,CV.wall.y0,FW,3);
+  /* infield dirt */
+  fx.fillStyle='#c99a63';
+  fx.beginPath();fx.ellipse(CV.dirt.x,CV.dirt.y,CV.dirt.rx,CV.dirt.ry,0,0,7);fx.fill();
+  /* mound + distant pitcher (+windup) */
+  fx.fillStyle='#bd8f5c';
+  fx.beginPath();fx.ellipse(CV.mound.x,CV.mound.y,CV.mound.rx,CV.mound.ry,0,0,7);fx.fill();
+  var py=CV.pitcher.y;
+  if(V.windupT){var w=Math.min(1,(now-V.windupT)/450);py-=Math.abs(Math.sin(w*Math.PI))*10;}
+  var pro=reactOff('P',now);
+  drawSprite(FIMG.pitcher,CV.pitcher.x+pro.dx,py+pro.dy,CV.pitcher.h,false);
+  /* home plate */
+  fx.fillStyle='#f5f2ea';
+  fx.beginPath();
+  fx.moveTo(CV.plate.x-14,CV.plate.y-8);fx.lineTo(CV.plate.x+14,CV.plate.y-8);
+  fx.lineTo(CV.plate.x+14,CV.plate.y+4);fx.lineTo(CV.plate.x,CV.plate.y+14);
+  fx.lineTo(CV.plate.x-14,CV.plate.y+4);fx.closePath();fx.fill();
+  fx.strokeStyle='rgba(0,0,0,.25)';fx.lineWidth=2;fx.stroke();
+  /* strike zone (faint — the 3x3 picker sits over it) */
+  fx.save();fx.strokeStyle='rgba(255,255,255,.55)';fx.lineWidth=2;
+  fx.setLineDash([7,6]);
+  fx.strokeRect(CV.zone.x,CV.zone.y,CV.zone.w,CV.zone.h);
+  fx.restore();
+  /* batter by handedness (+swing flipbook / react) */
+  var bat=S?BB.currentBatter(S):null;
+  var side=bat?bat.side:'R';
+  var bp=side==='L'?CV.batterL:CV.batterR;
+  var bf='batter';
+  if(V.swing){
+    var si=Math.min(V.swing.frames.length-1,Math.floor((now-V.swing.t0)/110));
+    bf=V.swing.frames[si];
+  }
+  var bro=reactOff('B',now);
+  drawSprite(FIMG[bf],bp.x+bro.dx,bp.y+bro.dy,bp.h,bp.flip);
+  /* catcher, big in the foreground */
+  drawSprite(FIMG.catcher2||FIMG.pitcher,CV.catcher.x,CV.catcher.y,CV.catcher.h,false);
+  /* mitt pop */
+  if(V.mittT){
+    var ma=(now-V.mittT)/320;
+    if(ma<1){
+      var ms=1+0.45*Math.sin(ma*Math.PI);
+      fx.save();fx.font=Math.round(46*ms)+'px serif';
+      fx.textAlign='center';fx.textBaseline='middle';
+      fx.fillText('🧤',(V.mittX==null?CV.mitt.x:V.mittX),CV.mitt.y);fx.restore();
+    }else V.mittT=0;
+  }
+  /* ball */
+  drawBall(now);
+  fx.restore();
+  seqPump(now);
+}
 function preloadField(){
   fi('field','img/field.jpg'); fi('pitcher','img/cut_pitcher.png');
   fi('batter','img/cut_batter.png'); fi('swingmid','img/cut_swing-mid.png');
@@ -674,7 +821,7 @@ function setCallout(t){
   if(!t){c.classList.remove('show');c.textContent='';return;}
   c.textContent=t;c.classList.remove('show');void c.offsetWidth;c.classList.add('show');
 }
-function hideOverlays(){['chipwrap','meterwrap'].forEach(function(id){el(id).style.display='none';});}
+function hideOverlays(){['chipwrap','spotwrap','meterwrap'].forEach(function(id){el(id).style.display='none';});}
 function setHint(t){el('phasehint').textContent=t||'';}
 function fieldReact(who,kind){V.react={who:who,kind:kind,t0:performance.now(),dur:700};}
 function reactOff(who,now){
@@ -716,13 +863,15 @@ function battedPosAt(b,p){
 }
 function ballPos(b,p){
   if(b.kind==='batted')return battedPosAt(b,p);
+  if(b.kind==='battedcv')return cvBattedPos(b,p);
+  if(b.kind==='pitchcv')return cvPitchPos(b,p);
   if(b.kind==='tomitt')return{x:b.from.x+(b.to.x-b.from.x)*p,y:b.from.y+(b.to.y-b.from.y)*p,r:9};
   return pitchPosAt(b,p);
 }
 function drawBall(now){
   var b=V.ball;if(!b)return;
   var p=Math.min(1,(now-b.t0)/b.dur);
-  if(p>=1&&b.kind!=='batted')return;
+  if(p>=1&&b.kind!=='batted'&&b.kind!=='battedcv')return;
   var pos=ballPos(b,p);
   fx.save();
   for(var k=3;k>=1;k--){
@@ -736,6 +885,7 @@ function drawBall(now){
   fx.restore();
 }
 function drawField(now){
+  if(V.cam==='catcher'){drawCatcherView(now);return;} /* behind-the-catcher pitching camera */
   fx.save();
   fx.clearRect(0,0,FW,FH);
   var cam=1;
@@ -824,7 +974,7 @@ function startGame(mode){
   var date=todayStr();
   var daily = mode==='daily' ? BB.makeDaily(date) : BB.makeDaily('practice|'+Date.now()+Math.random());
   S=BB.newGame(daily,mode); S.date=date;
-  V.phase=null;V.selPitch=0;V.selTarget=2;V.meter=null;V.batPitch=null;V.mittX=null;
+  V.phase=null;V.cam='catcher';V.selPitch=0;V.selSpot=4;V.meter=null;V.batPitch=null;V.mittX=null;
   resetFieldFx(); preloadField();
   el('game-mode').textContent=mode==='daily'?'DAILY':'PRACTICE';
   clearLog(); show('screen-game');
@@ -833,20 +983,43 @@ function startGame(mode){
 }
 function confirmExit(){ if(confirm('Quit this game and go home?')) location.href='../..'; }
 
-/* ----- pitching: pick pitch (chips over the field) ----- */
+/* ----- pitching: pick pitch (chips over the behind-catcher view) ----- */
 function phasePitchSelect(){
-  stopMeter(); resetFieldFx(); V.phase='pitchSelect'; hideOverlays();
+  stopMeter(); resetFieldFx(); V.phase='pitchSelect'; V.cam='catcher'; hideOverlays();
   el('chipwrap').style.display='block';
   setHint('Choose your pitch');
   var box=el('pitchchips'); box.innerHTML='';
   var bat=BB.currentBatter(S);
   var tierWord=bat.tier==='G'?'tough out':bat.tier==='E'?'whiffs a lot':'solid hitter';
-  el('batterline').textContent='Batter: '+bat.name+' — '+tierWord+'.';
+  var sideWord=bat.side==='L'?'bats right':'bats left';
+  el('batterline').textContent='Batter: '+bat.name+' — '+tierWord+', '+sideWord+'.';
   S.daily.pitches.forEach(function(p,i){
     var b=document.createElement('button'); b.className='chip';
     b.innerHTML='<b>'+p.name+'</b><small>'+p.speed+' mph</small>';
-    b.onclick=function(){V.selPitch=i;phaseMeter('pitch');};
+    b.onclick=function(){V.selPitch=i;phaseSpotSelect();};
     box.appendChild(b);
+  });
+  renderScore();
+}
+/* ----- pitching: pick your spot (3x3 over the behind-catcher view) -----
+   The boxes disappear the moment you pick — the camera never moves. */
+var SPOTS=[
+  {t:'↖ corner',c:1},{t:'↑ edge',c:0},{t:'↗ corner',c:1},
+  {t:'← edge',c:0},{t:'● middle',c:0},{t:'→ edge',c:0},
+  {t:'↙ corner',c:1},{t:'↓ edge',c:0},{t:'↘ corner',c:1}
+];
+function phaseSpotSelect(){
+  stopMeter(); V.phase='spotSelect'; hideOverlays();
+  el('spotwrap').style.display='block';
+  setHint('Pick your spot');
+  var g=el('spotgrid'); g.innerHTML='';
+  SPOTS.forEach(function(s,i){
+    var b=document.createElement('button');
+    b.className='spot'+(s.c?' corner':'');
+    var label=s.t.split(' ')[0], sub=s.t.split(' ')[1];
+    b.innerHTML=label+'<small>'+sub+'</small>';
+    b.onclick=function(){V.selSpot=i;phaseMeter('pitch');};
+    g.appendChild(b);
   });
   renderScore();
 }
@@ -873,9 +1046,9 @@ function phaseMeter(kind){
     var pb=BB.pitchBand(S,V.selPitch);
     band=pb.band; P=pb.mp;
     var pName=S.daily.pitches[V.selPitch].name;
-    el('meter-label').innerHTML='🟢 <b>'+pName+'</b> — stop the needle in the green.<br><span style="font-weight:400">Where you stop the needle is where the pitch goes.</span>';
+    el('meter-label').innerHTML='🟢 <b>'+pName+'</b> — the gold sits somewhere random.<br><span style="font-weight:400">Stop the needle in the gold: painted, unhittable. Miss it and it\'s hittable or a ball.</span>';
     mb.textContent='STOP'; mb.className='btn btn-primary';
-    el('meter-axis').style.display='flex';
+    el('meter-axis').style.display='none'; /* gold is random now — no fixed zones */
   }else{
     var bb=BB.batBand(S,V.batPitch);
     band=bb.band; P=bb.mp;
@@ -904,28 +1077,30 @@ function meterTap(){
   V.meterBand=band;
   stopMeter();
   if(kind==='pitch'){
-    V.mittX=L.mitt.x+[-38,-18,0,18,38][res.target]; /* corners paint the black, middle grooves one */
+    V.mittX=CV.mitt.x+CV.spotDX[V.selSpot%3]; /* pitch heads to the picked spot column */
     doPlayerPitch(res);
   }else{
     doPlayerBat(res);
   }
 }
 el('meterbtn').onclick=meterTap;
-/* ----- pitch sequence on the field (presentation only — outcome already decided by BB) ----- */
+/* ----- pitch sequence, behind-the-catcher camera (presentation only —
+   outcome already decided by BB). The camera never moves: the boxes are gone,
+   you watch the pitch come at you and the batter swing from this angle. ----- */
 function doPlayerPitch(res){
   var curBat=BB.currentBatter(S), bn=esc(curBat.name);
-  var r=BB.playerPitch(S,V.selPitch,V.meterBand,res);
+  var r=BB.playerPitch(S,V.selPitch,V.selSpot,V.meterBand,res);
   var ev=r.event, P=ev.pitch;
-  var qw={bullseye:'🎯 <b>Painted it!</b>',green:'✅ <b>Nailed the spot.</b>',
-          close:'😐 <b>Missed the spot</b> — it drifts.',wild:'😬 <b>Wild!</b>'}[ev.q];
+  var qw={bullseye:'🎯 <b>Painted it!</b>',green:'✅ <b>Nailed the gold.</b>',
+          close:'😐 <b>Missed the gold</b> — hittable.',wild:'😬 <b>Wild!</b>'}[ev.q];
   var msg='';
   if(ev.walk) msg='🚶 <b>Ball 4 — walk.</b> '+bn+' takes first.';
-  else if(ev.type==='ball') msg='⚪ Ball '+S.count.b+' — '+(res.q==='close'?'just missed the green.':'way off the spot.');
+  else if(ev.type==='ball') msg='⚪ Ball '+S.count.b+' — '+(res.q==='close'?'just missed the gold.':'way off the gold.');
   else if(ev.struckout) msg='🔥 <b>Strike 3 — STRUCK HIM OUT!</b> '+bn+' goes down '+(ev.swinging?'swinging':'looking')+'.';
   else if(ev.type==='strike') msg=qw+' Strike '+S.count.s+'.';
   else if(ev.type==='hit') msg=hitMsg(ev.kind,'CPU');
   else msg='❌ '+cap(ev.how)+' — '+bn+' is out. '+qw;
-  V.phase='pitchAnim'; hideOverlays(); setHint('');
+  V.phase='pitchAnim'; V.cam='catcher'; hideOverlays(); setHint('');
   /* immediate verdict — the callout lands the moment you tap */
   if(ev.type==='hit'||ev.type==='out') setCallout('');
   else setCallout(ev.walk?'BALL 4':ev.type==='ball'?'BALL':ev.struckout?'STRUCK OUT!':(ev.q==='bullseye'?'PAINTED IT!':'STRIKE!'));
@@ -942,19 +1117,27 @@ function doPlayerPitch(res){
   seqAfter(450,function(){
     V.windupT=0;
     var F=PITCH_FLIGHT[P.name]||PITCH_FLIGHT['Fastball'];
-    V.ball={kind:'pitch',t0:performance.now(),dur:F.dur,F:F};
+    var mittX=(V.mittX==null?CV.mitt.x:V.mittX);
+    V.ball={kind:'pitchcv',t0:performance.now(),dur:F.dur,F:F,mittX:mittX};
+    /* the CPU batter swings as the ball arrives */
+    var swung = ev.swinging || ev.type==='hit' || ev.type==='out' || ev.type==='foul';
+    if(swung) seqAfter(Math.max(60,F.dur-200),function(){ playSwing(ev); });
     seqAfter(F.dur+40,function(){
       V.ball=null;
       if(ev.type==='hit'||ev.type==='out'){
         var key=ev.type==='hit'?ev.kind:ev.how;
-        var spot=L.hitSpot[key]||L.hitSpot['1B'];
-        var dur=(key==='HR')?820:580;
-        V.ball={kind:'batted',t0:performance.now(),dur:dur,
-                from:{x:L.plate.x,y:L.plate.y-60},to:spot,
-                arc:(key==='HR'||key==='flyout'||key==='3B')?70:16};
-        V.converge={t0:performance.now(),dur:dur,spot:spot};
+        var spot=CV.hitSpot[key]||CV.hitSpot['1B'];
+        var dur=(key==='HR')?900:640;
+        V.ball={kind:'battedcv',t0:performance.now(),dur:dur,
+                from:{x:CV.plate.x,y:CV.plate.y-14},to:spot,
+                arc:(key==='HR'||key==='flyout'||key==='3B')?90:26};
         setCallout(ev.type==='hit'?HITCALL[ev.kind]:'OUT');
         seqAfter(dur+700,finishPitch);
+      }else if(ev.type==='foul'){
+        V.ball={kind:'battedcv',t0:performance.now(),dur:620,
+                from:{x:CV.plate.x,y:CV.plate.y-14},
+                to:{x:CV.plate.x+(curBat.side==='L'?-1:1)*430,y:120},arc:110};
+        seqAfter(1150,finishPitch);
       }else{
         V.mittT=performance.now();
         seqAfter(700,finishPitch);
@@ -978,7 +1161,7 @@ function endHalfUI(){
 }
 /* ----- batting on the field ----- */
 function startBat(){
-  resetFieldFx(); V.phase='bat'; hideOverlays();
+  resetFieldFx(); V.phase='bat'; V.cam='mound'; hideOverlays();
   V.batPitch=S.daily.pitches[Math.floor(S.rand()*3)];
   el('batterline').textContent='Your at-bat — watch for the green.';
   renderScore();
