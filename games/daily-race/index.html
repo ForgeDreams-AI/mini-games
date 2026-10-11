@@ -164,7 +164,7 @@
     <button class="btn ghost" id="resultsBtn">Results</button>
     <button class="btn ghost" id="hubBtn">&#8962; ALL GAMES</button>
     <button class="linkBtn" id="nameBtn">driver: not set</button>
-    <p class="howto"><b>Hold LEFT / RIGHT to steer</b> &mdash; your car launches fast on its own.<br>
+    <p class="howto" id="howto"><b>Hold LEFT / RIGHT to steer</b> &mdash; your car launches fast on its own.<br>
     <b style="color:#4ade80;">Green pads = boost.</b> Oil spins you out, rival cars pop you up.<br>
     Beat your best time. One scored race per day.</p>
   </div>
@@ -733,7 +733,7 @@ function makeChallengeAI(tr,rng){
   var colors=['#ef4444','#f59e0b','#a855f7','#22c55e','#eab308'];
   var ai=[];
   for(var i=0;i<CH_AI;i++){
-    ai.push({slot:i,laneOff:(rng()*2-1)*22,pace:0.87+rng()*0.07,
+    ai.push({slot:i,laneOff:(rng()*2-1)*12,pace:0.87+rng()*0.07,
              wob:rng()*6.283,color:colors[i%colors.length],car:null});
   }
   return ai;
@@ -747,14 +747,22 @@ function gridChallengeCar(tr,seg,lat,halfW){
   return c;
 }
 function challengeAIInput(tr,car,ai,t){
-  var look=Math.floor(10+car.speed/MAXV*12);
+  /* v2: apex-seeking pure pursuit. Shorter lookahead + aim for the inside of
+     upcoming corners (real racing line) instead of weaving on lane offset.
+     Cuts ~20s/lap vs the old lane-following steering in sims. */
+  var look=Math.floor(6+car.speed/MAXV*6);
   var ti=Math.min(car.seg+look,tr.NS-1);
   var tp=tr.pts[ti];
-  var desLat=ai.laneOff+Math.sin(t*0.7+ai.wob)*4;
-  var dx=tp.x+Math.cos(tp.hd)*desLat-car.x;
-  var dy=tp.y+Math.sin(tp.hd)*desLat-car.y;
+  var turnDir=0,s2;
+  for(s2=Math.max(0,car.seg+2);s2<Math.min(car.seg+14,tr.NS-2);s2++){
+    turnDir+=normAng(tr.pts[s2+1].hd-tr.pts[s2].hd);
+  }
+  var apexLat=turnDir>0.05?-14:(turnDir<-0.05?14:0);
+  var latTgt=ai.laneOff*0.5+apexLat;
+  var dx=tp.x+Math.cos(tp.hd)*latTgt-car.x;
+  var dy=tp.y+Math.sin(tp.hd)*latTgt-car.y;
   var desHd=Math.atan2(dx,-dy);
-  return {steer:clamp(normAng(desHd-car.hd)*2.5,-1,1)};
+  return {steer:clamp(normAng(desHd-car.hd)*3.5,-1,1)};
 }
 function challengeAICap(tr,car,ai,playerSeg){
   var mc=0,hi=Math.min(car.seg+26,tr.NS-2),s;
@@ -766,7 +774,9 @@ function challengeAICap(tr,car,ai,playerSeg){
   var vAllow=Math.sqrt(2400/Math.max(curv,1e-6));
   var cap=Math.min(ai.pace*MAXV,vAllow);
   var gapU=(car.seg-playerSeg)*(SEG_LEN/SAMPLES);
-  if(gapU>500)cap*=0.94;else if(gapU<-500)cap*=1.07;
+  /* rubber-band: keep the pack within striking distance so every AI has a
+     real chance to win. Tighter window + stronger pull than v1. */
+  if(gapU>400)cap*=0.92;else if(gapU<-400)cap*=1.10;
   return cap;
 }
 function bumpChallengeCars(cars){
@@ -1187,6 +1197,15 @@ function setMode(m){
   document.getElementById('bestToday').textContent =
     m==='challenge'?(cday&&cday.best?fmtPos(cday.pos)+' '+fmt(cday.best):'--')
                    :(day&&day.best?fmt(day.best):'--');
+  // mode-specific how-to (challenge has no boost pads or oil)
+  document.getElementById('howto').innerHTML =
+    m==='challenge'
+    ? '<b>Hold LEFT / RIGHT to steer</b> &mdash; your car launches fast on its own.<br>'
+      + 'Race <b>3 laps</b> against <b>5 rival drivers</b> on a wide border-only circuit.<br>'
+      + 'Rivals jostle you &mdash; bump back. Best position wins. One scored race per day.'
+    : '<b>Hold LEFT / RIGHT to steer</b> &mdash; your car launches fast on its own.<br>'
+      + '<b style="color:#4ade80;">Green pads = boost.</b> Oil spins you out, rival cars pop you up.<br>'
+      + 'Beat your best time. One scored race per day.';
 }
 
 function loadChallengeDay(ds){
