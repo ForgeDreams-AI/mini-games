@@ -1205,10 +1205,15 @@ function lbPost(obj){
     headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(obj)})
     .then(function(r){return r.json();}).catch(function(){return null;});
 }
+function lbGet(params){
+  if(!lbOn())return Promise.resolve(null);
+  var q=Object.keys(params).map(function(k){return encodeURIComponent(k)+'='+encodeURIComponent(params[k]);}).join('&');
+  return fetch(LEADERBOARD_URL+'?'+q,{redirect:'follow'})
+    .then(function(r){return r.json();}).catch(function(){return null;});
+}
 function lbBoard(){
   if(!lbOn())return Promise.resolve(null);
-  var url=LEADERBOARD_URL+'?game='+encodeURIComponent(GAME_ID)+'&date='+encodeURIComponent(dateStr());
-  return fetch(url,{redirect:'follow'}).then(function(r){return r.json();}).catch(function(){return null;});
+  return lbGet({action:'board',game:GAME_ID,date:dateStr()});
 }
 var USER_LS='dailyputt.user';
 function getUser(){try{return JSON.parse(localStorage.getItem(USER_LS))||null;}catch(e){return null;}}
@@ -1230,53 +1235,80 @@ function refreshNameBtn(){
 var nameState='name',pendingName='',nameAfter=null;
 function openName(after){
   if(!lbOn()){if(after)after();return;}
-  nameAfter=after||null;nameState='name';pendingName='';
+  nameAfter=(typeof after==='function')?after:null;
+  nameState='name';pendingName='';
   nameInput.value='';phraseInput.value='';
   phraseWrap.classList.add('hidden');nameMsg.textContent='';
   nameSub.textContent='Claim a name for the daily leaderboard.';
   nameGo.textContent='CHECK NAME';
+  $('nameCancel').textContent='skip \u2014 play without leaderboard';
   nameScreen.classList.remove('hidden');
   setTimeout(function(){nameInput.focus();},60);
 }
-function closeName(){nameScreen.classList.add('hidden');nameAfter=null;}
+/* Close the name screen. runAfter=true only on successful claim/verify or
+   explicit skip — cancel means play local-only, no leaderboard. */
+function closeName(runAfter){
+  nameScreen.classList.add('hidden');
+  var f=nameAfter;nameAfter=null;
+  if(runAfter&&f)f();
+}
 nameGo.addEventListener('click',function(){
   if(nameState==='name'){
     var n=nameInput.value.trim();
     if(!validName(n)){nameMsg.textContent='Letters, numbers and spaces only, max 16 chars.';return;}
     nameMsg.textContent='checking\u2026';
-    lbPost({action:'check',username:n}).then(function(res){
+    lbGet({action:'check',username:n}).then(function(res){
       if(!res){nameMsg.textContent='Could not reach the leaderboard. Try again.';return;}
-      if(res.status==='invalid'){nameMsg.textContent='Letters, numbers and spaces only, max 16 chars.';return;}
-      pendingName=res.display||n;
+      if(res.ok===false&&res.error==='invalid_name'){nameMsg.textContent='Letters, numbers and spaces only, max 16 chars.';return;}
+      if(!(res&&res.ok)){nameMsg.textContent='Could not reach the leaderboard. Try again.';return;}
+      pendingName=n;
       phraseWrap.classList.remove('hidden');nameMsg.textContent='';
-      if(res.status==='free'){
+      if(!res.taken){
         nameState='claim';
         nameSub.textContent='\u201C'+pendingName+'\u201D is yours \u2014 set a secret phrase to lock it in.';
         nameGo.textContent='CLAIM NAME';
       }else{
-        nameState='unlock';
+        nameState='verify';
         nameSub.textContent='\u201C'+pendingName+'\u201D is taken \u2014 enter its secret phrase to use it.';
         nameGo.textContent='UNLOCK NAME';
       }
       setTimeout(function(){phraseInput.focus();},60);
     });
-  }else{
+  }else if(nameState==='claim'){
     var ph=phraseInput.value;
     if(ph.length<4){nameMsg.textContent='Phrase needs at least 4 characters.';return;}
     nameMsg.textContent='working\u2026';
     sha256hex(pendingName.toLowerCase()+'|'+ph).then(function(hash){
-      return lbPost({action:nameState==='claim'?'claim':'verify',username:pendingName,phrase_hash:hash})
+      return lbPost({action:'claim',username:pendingName,hash:hash})
         .then(function(res){return{res:res,hash:hash};});
     }).then(function(out){
       if(out.res&&out.res.ok){
         setUser({name:pendingName,hash:out.hash});
-        refreshNameBtn();closeName();
-        var f=nameAfter;nameAfter=null;if(f)f();
-      }else{nameMsg.textContent=(out.res&&out.res.error)||'Wrong phrase \u2014 try again.';}
+        refreshNameBtn();closeName(true);
+      }else{
+        var e=(out.res&&out.res.error)||'';
+        nameMsg.textContent=e==='wrong_phrase'?'Wrong phrase \u2014 try again.'
+          :(e?'Error: '+e:'Could not claim that name. Try again.');
+      }
+    }).catch(function(){nameMsg.textContent='Something went wrong. Try again.';});
+  }else{
+    var ph2=phraseInput.value;
+    if(ph2.length<4){nameMsg.textContent='Phrase needs at least 4 characters.';return;}
+    nameMsg.textContent='working\u2026';
+    sha256hex(pendingName.toLowerCase()+'|'+ph2).then(function(hash){
+      return lbGet({action:'verify',username:pendingName,hash:hash})
+        .then(function(res){return{res:res,hash:hash};});
+    }).then(function(out){
+      if(out.res&&out.res.ok){
+        setUser({name:pendingName,hash:out.hash});
+        refreshNameBtn();closeName(true);
+      }else{
+        nameMsg.textContent='Wrong phrase \u2014 try again.';
+      }
     }).catch(function(){nameMsg.textContent='Something went wrong. Try again.';});
   }
 });
-$('nameCancel').addEventListener('click',closeName);
+$('nameCancel').addEventListener('click',function(){closeName(true);});
 nameBtn.addEventListener('click',function(){openName(null);});
 logoutBtn.addEventListener('click',function(){clearUser();refreshNameBtn();renderBoard();});
 
@@ -1303,7 +1335,7 @@ function showResults(){
     var doSubmit=function(){
       var u=getUser();
       if(lbOn()&&u&&u.hash)lbPost({action:'submit',game:GAME_ID,date:dateStr(),
-        username:u.name,phrase_hash:u.hash,score:t.strokes});
+        username:u.name,hash:u.hash,score:t.strokes});
       renderBoard();
     };
     var u0=getUser();
@@ -1316,12 +1348,13 @@ function renderBoard(){
     lbTitle.innerHTML='Leaderboard offline \u2014 set LEADERBOARD_URL to enable';
   }else{
     lbTitle.innerHTML='Today\u2019s leaderboard';
-    lbBoard().then(function(rows){
-      if(!rows||!rows.length){lbList.innerHTML='<div class="lbRow"><span>No scores yet today.</span></div>';return;}
+    lbBoard().then(function(res){
+      var rows=(res&&res.ok&&res.entries)||[];
+      if(!rows.length){lbList.innerHTML='<div class="lbRow"><span>No scores yet today.</span></div>';return;}
       var u=getUser(),html='';
       for(var i=0;i<rows.length;i++){
-        var r=rows[i],me=u&&r.username===u.name;
-        html+='<div class="lbRow'+(me?' me':'')+'"><span>#'+(i+1)+' '+esc(r.username)+'</span><span>'+r.score+' putts</span></div>';
+        var r=rows[i],me=u&&String(r.display).toLowerCase()===String(u.name).toLowerCase();
+        html+='<div class="lbRow'+(me?' me':'')+'"><span>#'+(i+1)+' '+esc(r.display)+'</span><span>'+r.score+' putts</span></div>';
       }
       lbList.innerHTML=html;
     });

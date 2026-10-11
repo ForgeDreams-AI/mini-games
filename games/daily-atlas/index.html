@@ -149,7 +149,7 @@
     <input id="name-phrase" type="password" placeholder="Secret phrase (min 4 chars)" style="display:none">
     <div class="err" id="name-err"></div>
     <button class="btn btn-primary" id="name-go">Continue</button>
-    <button class="tiny-link" id="name-cancel">Cancel</button>
+    <button class="tiny-link" id="name-cancel">Skip — play without leaderboard</button>
     <p class="note">Don't lose your phrase — there's no reset.</p>
   </div>
 </div>
@@ -445,14 +445,23 @@ function nameGo(){
   err.textContent='Saving…';
   var key=nameChecked.name.toLowerCase();
   sha256hex(key+'|'+phrase).then(function(hash){
-    return apiPost({action:'claim',username:nameChecked.name,hash:hash}).then(function(res){
-      if(!res.ok){
-        err.textContent=res.error==='wrong_phrase'?'Wrong phrase for that name.':'Could not claim that name.';
-        return;
-      }
-      saveUser({display:nameChecked.name,key:key,hash:hash});
-      closeNameModal(); refreshMenu(); if(nameCb)nameCb();
-    });
+    // free name -> CLAIM (POST); taken name -> VERIFY (GET) with the phrase
+    var req=nameChecked.taken
+      ? apiGet({action:'verify',username:nameChecked.name,hash:hash})
+      : apiPost({action:'claim',username:nameChecked.name,hash:hash});
+    return req.then(function(res){return{res:res,hash:hash};});
+  }).then(function(out){
+    var res=out.res;
+    if(res&&res.ok){
+      saveUser({display:nameChecked.name,key:key,hash:out.hash});
+      closeNameModal(); refreshMenu(); if(nameCb){var cb=nameCb;nameCb=null;cb();}
+    }else if(nameChecked.taken){
+      err.textContent='That name is taken and the phrase is wrong.';
+    }else if(res&&res.error==='wrong_phrase'){
+      err.textContent='That name is taken and the phrase is wrong.';
+    }else{
+      err.textContent='Could not save that name — try again.';
+    }
   }).catch(function(){err.textContent='Something went wrong. Try again.';});
 }
 
@@ -465,7 +474,10 @@ document.addEventListener('DOMContentLoaded',function(){
   el('btn-menu2').onclick=function(){refreshMenu();show('screen-menu');};
   el('btn-name').onclick=function(){openNameModal();};
   el('name-go').onclick=nameGo;
-  el('name-cancel').onclick=closeNameModal;
+  el('name-cancel').onclick=function(){
+    // explicit skip: close and continue local-only
+    closeNameModal(); if(nameCb){var cb=nameCb; nameCb=null; cb();}
+  };
   el('btn-share').onclick=function(){
     var t=shareText(G.date,G.results);
     if(navigator.share){navigator.share({text:t}).catch(function(){});}

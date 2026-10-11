@@ -213,9 +213,9 @@
   <h3 style="margin:0 0 4px" id="user-title">Claim your name</h3>
   <p class="note" style="text-align:left" id="user-desc">First come, first served. Set a secret phrase to lock it in — don't lose it, there's no reset.</p>
   <input id="user-input" maxlength="16" placeholder="Player name" autocomplete="off">
-  <input id="user-phrase" type="password" placeholder="Secret phrase (min 4 chars)" autocomplete="off">
+  <input id="user-phrase" type="password" placeholder="Secret phrase (min 4 chars)" autocomplete="off" style="display:none">
   <div class="row2">
-    <button class="btn btn-primary" id="user-ok">Claim</button>
+    <button class="btn btn-primary" id="user-ok">Check name</button>
     <button class="btn btn-secondary" id="user-cancel">Cancel</button>
   </div>
   <p class="note" id="user-err" style="color:#c62f2f"></p>
@@ -588,26 +588,60 @@ function clearUser(){try{localStorage.removeItem(ULS);}catch(e){}}
 function validNameLocal(n){n=String(n||'').trim();return n.length>=1&&n.length<=16&&/^[A-Za-z0-9 ]+$/.test(n);}
 async function sha256hex(s){var b=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(s));
   return Array.prototype.map.call(new Uint8Array(b),function(x){return x.toString(16).padStart(2,'0');}).join('');}
+var userStage='name', userChecked=null;
 function openUserModal(){el('user-err').textContent='';el('usermodal').classList.add('on');
-  var u=loadUser();el('user-input').value=u?u.display:'';el('user-phrase').value='';
+  userStage='name'; userChecked=null;
+  var u=loadUser();el('user-input').value=u?u.display:'';el('user-input').style.display='';
+  el('user-phrase').value='';el('user-phrase').style.display='none';
   el('user-title').textContent=u?'Switch player':'Claim your name';
+  el('user-desc').textContent='First come, first served. Set a secret phrase to lock it in \u2014 don\u2019t lose it, there\u2019s no reset.';
+  el('user-ok').textContent='Check name';
   setTimeout(function(){el('user-input').focus();},50);}
 function closeUserModal(){el('usermodal').classList.remove('on');}
 async function userOk(){
-  var name=el('user-input').value.trim(), phrase=el('user-phrase').value;
   var err=el('user-err');
-  if(!validNameLocal(name)){err.textContent='Name: 1–16 chars, letters/numbers/spaces.';return;}
-  if(!LEADERBOARD_URL){ /* local-only: just remember the name */
-    saveUser({display:name,key:name.toLowerCase(),hash:null});closeUserModal();refreshMenu();return;}
+  if(userStage==='name'){
+    var name0=el('user-input').value.trim();
+    if(!validNameLocal(name0)){err.textContent='Name: 1\u201316 chars, letters/numbers/spaces.';return;}
+    if(!LEADERBOARD_URL){ /* local-only: just remember the name */
+      saveUser({display:name0,key:name0.toLowerCase(),hash:null});closeUserModal();refreshMenu();return;}
+    err.textContent='Checking\u2026';
+    try{
+      var chk=await apiGet({action:'check',username:name0});
+      if(!chk||!chk.ok){
+        err.textContent=(chk&&chk.error==='invalid_name')
+          ?'Name: 1\u201316 chars, letters/numbers/spaces.'
+          :'Could not reach server. Try again.';
+        return;
+      }
+      userChecked={name:name0,taken:!!chk.taken};
+      userStage='phrase';
+      el('user-input').style.display='none';
+      el('user-phrase').style.display='';
+      el('user-title').textContent=chk.taken?'Name taken':'This name is yours';
+      el('user-desc').textContent=chk.taken
+        ?'\u201C'+name0+'\u201D is taken \u2014 enter its secret phrase to use it.'
+        :'Set a secret phrase (min 4 chars) to lock in \u201C'+name0+'\u201D. Don\u2019t lose it \u2014 there\u2019s no reset.';
+      el('user-ok').textContent=chk.taken?'Unlock name':'Claim name';
+      err.textContent='';
+      el('user-phrase').focus();
+    }catch(e){err.textContent='Network error \u2014 try again.';}
+    return;
+  }
+  /* phrase stage */
+  var name=userChecked.name, phrase=el('user-phrase').value;
   if(phrase.length<4){err.textContent='Secret phrase needs 4+ characters.';return;}
-  err.textContent='Checking…';
+  err.textContent='Saving\u2026';
   try{
-    var chk=await apiGet({action:'check',username:name});
     var hash=await sha256hex(name.toLowerCase()+'|'+phrase);
-    var r=await apiPost({action:'claim',username:name,hash:hash});
-    if(r.ok){saveUser({display:name,key:name.toLowerCase(),hash:hash});closeUserModal();refreshMenu();}
-    else err.textContent=r.error==='wrong_phrase'?'That name is taken and the phrase is wrong.':'Claim failed: '+r.error;
-  }catch(e){err.textContent='Network error — try again.';}
+    var r=userChecked.taken
+      ? await apiGet({action:'verify',username:name,hash:hash})
+      : await apiPost({action:'claim',username:name,hash:hash});
+    if(r&&r.ok){saveUser({display:name,key:name.toLowerCase(),hash:hash});closeUserModal();refreshMenu();}
+    else err.textContent=userChecked.taken
+      ?'That name is taken and the phrase is wrong.'
+      :(r&&r.error?('Claim failed: '+r.error):'Claim failed. Try again.');
+  }catch(e){err.textContent='Network error \u2014 try again.';}
 }
 
 /* ---------- one-shot daily lock ---------- */

@@ -874,10 +874,16 @@ function lbPost(obj){
     .then(function(r){return r.json();})
     .catch(function(){return null;});
 }
-function lbBoard(){
+function lbGet(params){
   if(!lbOn())return Promise.resolve(null);
-  var url=LEADERBOARD_URL+'?game='+encodeURIComponent(GAME_ID)+'&date='+encodeURIComponent(dateStr());
-  return fetch(url,{redirect:'follow'}).then(function(r){return r.json();}).catch(function(){return null;});
+  var q=Object.keys(params).map(function(k){return encodeURIComponent(k)+'='+encodeURIComponent(params[k]);}).join('&');
+  return fetch(LEADERBOARD_URL+'?'+q,{redirect:'follow'})
+    .then(function(r){return r.json();})
+    .catch(function(){return null;});
+}
+function lbBoard(gameId){
+  if(!lbOn())return Promise.resolve(null);
+  return lbGet({action:'board',game:gameId||GAME_ID,date:dateStr()});
 }
 function tierClass(t){
   return 'tier-'+t.replace('FRONT ROW','FROW').replace('PIT LANE','PITLANE').replace(/ /g,'');
@@ -900,67 +906,92 @@ function refreshNameBtn(){
 }
 function openName(after){
   if(!lbOn()){if(after)after();return;}
-  nameAfter=after||null;nameState='name';pendingName='';
+  nameAfter=(typeof after==='function')?after:null;
+  nameState='name';pendingName='';
   nameInput.value='';phraseInput.value='';
   phraseWrap.classList.add('hidden');nameMsg.textContent='';
   nameSub.textContent='Claim a name for the daily leaderboard.';
   nameGo.textContent='CHECK NAME';
+  document.getElementById('nameCancel').textContent='skip \u2014 race without leaderboard';
   nameScreen.classList.remove('hidden');
   setTimeout(function(){nameInput.focus();},60);
 }
-function closeName(){nameScreen.classList.add('hidden');nameAfter=null;}
+/* Close the name screen. runAfter=true only on successful claim/verify or
+   explicit skip — cancel means race local-only, no leaderboard. */
+function closeName(runAfter){
+  nameScreen.classList.add('hidden');
+  var f=nameAfter;nameAfter=null;
+  if(runAfter&&f)f();
+}
 nameGo.addEventListener('click',function(){
   if(nameState==='name'){
     var n=nameInput.value.trim();
     if(!validName(n)){nameMsg.textContent='Letters, numbers and spaces only, max 16 chars.';return;}
     nameMsg.textContent='checking\u2026';
-    lbPost({action:'check',username:n}).then(function(res){
+    lbGet({action:'check',username:n}).then(function(res){
       if(!res){nameMsg.textContent='Could not reach the leaderboard. Try again.';return;}
-      if(res.status==='invalid'){nameMsg.textContent='Letters, numbers and spaces only, max 16 chars.';return;}
-      pendingName=res.display||n;
+      if(res.ok===false&&res.error==='invalid_name'){nameMsg.textContent='Letters, numbers and spaces only, max 16 chars.';return;}
+      if(!(res&&res.ok)){nameMsg.textContent='Could not reach the leaderboard. Try again.';return;}
+      pendingName=n;
       phraseWrap.classList.remove('hidden');nameMsg.textContent='';
-      if(res.status==='free'){
+      if(!res.taken){
         nameState='claim';
         nameSub.textContent='\u201C'+pendingName+'\u201D is yours \u2014 set a password phrase to lock it in.';
         nameGo.textContent='CLAIM NAME';
       }else{
-        nameState='unlock';
+        nameState='verify';
         nameSub.textContent='\u201C'+pendingName+'\u201D is taken \u2014 enter its password phrase to use it.';
         nameGo.textContent='UNLOCK NAME';
       }
       setTimeout(function(){phraseInput.focus();},60);
     });
-  }else{
+  }else if(nameState==='claim'){
     var ph=phraseInput.value;
     if(ph.length<4){nameMsg.textContent='Phrase needs at least 4 characters.';return;}
     nameMsg.textContent='working\u2026';
     sha256hex(pendingName.toLowerCase()+'|'+ph).then(function(hash){
-      var act=nameState==='claim'?'claim':'verify';
-      return lbPost({action:act,username:pendingName,phrase_hash:hash}).then(function(res){
-        return{res:res,hash:hash};
-      });
+      return lbPost({action:'claim',username:pendingName,hash:hash})
+        .then(function(res){return{res:res,hash:hash};});
     }).then(function(out){
       var res=out.res;
       if(res&&res.ok){
         setUser({name:pendingName,hash:out.hash});
-        refreshNameBtn();closeName();
-        var f=nameAfter;nameAfter=null;
-        if(f)f();
+        refreshNameBtn();closeName(true);
       }else{
-        nameMsg.textContent=(res&&res.error)||'Wrong phrase \u2014 try again.';
+        var e=(res&&res.error)||'';
+        nameMsg.textContent=e==='wrong_phrase'?'Wrong phrase \u2014 try again.'
+          :(e?'Error: '+e:'Could not claim that name. Try again.');
+      }
+    }).catch(function(){
+      nameMsg.textContent='Something went wrong. Try again.';
+    });
+  }else{
+    var ph2=phraseInput.value;
+    if(ph2.length<4){nameMsg.textContent='Phrase needs at least 4 characters.';return;}
+    nameMsg.textContent='working\u2026';
+    sha256hex(pendingName.toLowerCase()+'|'+ph2).then(function(hash){
+      return lbGet({action:'verify',username:pendingName,hash:hash})
+        .then(function(res){return{res:res,hash:hash};});
+    }).then(function(out){
+      var res=out.res;
+      if(res&&res.ok){
+        setUser({name:pendingName,hash:out.hash});
+        refreshNameBtn();closeName(true);
+      }else{
+        nameMsg.textContent='Wrong phrase \u2014 try again.';
       }
     }).catch(function(){
       nameMsg.textContent='Something went wrong. Try again.';
     });
   }
 });
-document.getElementById('nameCancel').addEventListener('click',closeName);
+document.getElementById('nameCancel').addEventListener('click',function(){closeName(true);});
 nameBtn.addEventListener('click',function(){openName(null);});
 logoutBtn.addEventListener('click',function(){clearUser();refreshNameBtn();renderResultsLists();});
 function autoVerify(){
   var u=getUser();
   if(!lbOn()||!u||!u.hash)return;
-  lbPost({action:'verify',username:u.name,phrase_hash:u.hash}).then(function(res){
+  lbGet({action:'verify',username:u.name,hash:u.hash}).then(function(res){
     if(res&&!res.ok){clearUser();refreshNameBtn();}
   });
 }
@@ -989,9 +1020,9 @@ function renderResultsLists(){
     }
     var u=getUser(),me=u?u.name.toLowerCase():null,h='';
     for(var i=0;i<board.entries.length;i++){
-      var e=board.entries[i],isMe=me&&String(e.username).toLowerCase()===me;
+      var e=board.entries[i],isMe=me&&String(e.display).toLowerCase()===me;
       var tr2=tierForRank(i+1,board.entries.length);
-      h+='<div class="lbRow'+(isMe?' me':'')+'"><span>P'+(i+1)+' '+esc(e.username)+'</span><span>'+esc(fmt(e.score))+'</span><span class="'+tierClass(tr2)+'">'+tr2+'</span></div>';
+      h+='<div class="lbRow'+(isMe?' me':'')+'"><span>P'+(i+1)+' '+esc(e.display)+'</span><span>'+esc(fmt(e.score))+'</span><span class="'+tierClass(tr2)+'">'+tr2+'</span></div>';
     }
     lbList.innerHTML=h;
   });
@@ -1283,6 +1314,13 @@ function challengePlayerPos(){
   return 6;
 }
 
+/* Leaderboard submit shared by classic (GAME_ID) and challenge (CH_GAME_ID) modes.
+   Backend expects POST {action:'submit', game, date, username, hash, score}. */
+function submitScore(gameId,score){
+  var u=getUser();
+  if(!lbOn()||!u||!u.hash)return Promise.resolve(null);
+  return lbPost({action:'submit',game:gameId,date:dateStr(),username:u.name,hash:u.hash,score:score});
+}
 function finishChallenge(){
   state='finished';
   var pos=challengePlayerPos();
@@ -1292,7 +1330,12 @@ function finishChallenge(){
     saveChallengeDay(dateStr(),pos,time);
     // leaderboard: composite score = pos*1e6 + timeMs (lower wins)
     var score=Math.round(pos*1e6+time*1000);
-    submitScore(CH_GAME_ID,score,{pos:pos,time:time});
+    submitScore(CH_GAME_ID,score).then(function(sres){
+      if(sres&&sres.ok){
+        document.getElementById('resRank').textContent=
+          'P'+sres.rank+' of '+sres.count+' today \u2014 '+sres.percentile+'th percentile';
+      }
+    });
   }
   pauseBtn.style.display='none';homeHudBtn.style.display='none';
   posBadge.style.display='none';
@@ -1367,19 +1410,12 @@ function finishRace(){
       var u=getUser();
       resTier.textContent='\u2026';resTier.className='';resTier.style.opacity='0.5';
       resRank.textContent='submitting\u2026';
-      lbPost({action:'submit',game:GAME_ID,date:ds,username:u.name,phrase_hash:u.hash,score:myMs})
+      lbPost({action:'submit',game:GAME_ID,date:ds,username:u.name,hash:u.hash,score:myMs})
         .then(function(sres){
           if(!sres||!sres.ok)throw new Error('offline');
-          return lbBoard().then(function(b){return{best:sres.best,board:b};});
-        })
-        .then(function(out){
-          var en=(out.board&&out.board.entries)||[];
-          var rank=1;
-          for(var i=0;i<en.length;i++)if(en[i].score<out.best)rank++;
-          var total=en.length||1;
-          var pct=Math.round((1-(rank-1)/total)*100);
-          showTier(tierForRank(rank,total));
-          resRank.textContent='P'+rank+' of '+total+' \u00B7 '+pct+'th percentile \u00B7 run #'+dailyTimes.length;
+          /* backend returns authoritative rank/count/percentile */
+          showTier(tierForRank(sres.rank,sres.count));
+          resRank.textContent='P'+sres.rank+' of '+sres.count+' \u00B7 '+sres.percentile+'th percentile \u00B7 run #'+dailyTimes.length;
         })
         .catch(function(){
           showTier(tierForPersonal(myMs,dailyTimes));
