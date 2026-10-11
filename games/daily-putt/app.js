@@ -101,13 +101,20 @@ function slopeInfo(h,x,y){
   return{pct:m*100,dx:-g.x/m,dy:-g.y/m,flat:false};
 }
 
+/* Smooth, round green outline: a closed curve whose radius is a pure sum of
+   low-frequency sinusoids, sampled densely (160 points). No straight facets,
+   no sharp corners -- it renders like a normal golf green. The same point
+   list is the physics boundary (inPoly), so the ball can never cross the
+   visual edge. */
 function blobPoly(rng,cx,cy,R,waist){
-  var pts=[],n=26;
+  var p1=rng()*6.28, p2=rng()*6.28, p3=rng()*6.28;
+  var a1=0.05+0.04*rng(), a2=0.035+0.03*rng(), a3=0.02+0.02*rng();
+  var n=160, pts=[];
   for(var i=0;i<n;i++){
     var a=i/n*Math.PI*2;
-    var w=1+0.10*Math.sin(3*a+rng()*6.28)+0.06*Math.sin(5*a+rng()*6.28);
+    var w=1+a1*Math.sin(2*a+p1)+a2*Math.sin(3*a+p2)+a3*Math.sin(5*a+p3);
     var r=R*w;
-    if(waist) r*=(1-waist*Math.pow(Math.abs(Math.sin(a)),6)); /* pinch top/bottom */
+    if(waist) r*=(1-waist*Math.pow(Math.abs(Math.sin(a)),6)); /* smooth pinch */
     pts.push({x:cx+Math.cos(a)*r*1.06, y:cy+Math.sin(a)*r*0.94});
   }
   return pts;
@@ -373,50 +380,7 @@ function roundRectP(x,y,w,h,r){
   ctx.closePath();
 }
 
-/* slope arrows: tiled across the green, pointing DOWNHILL.
-   size + count = steepness. Animated so they flow downhill.
-   Samples the same numeric gradient the physics uses. */
 var nowS=0; /* seconds, updated in the main loop */
-function drawSlopeArrows(green){
-  var SP=10, bb=green.bbox; /* wider tiles: fewer, calmer chevrons */
-  ctx.lineCap='round';ctx.lineJoin='round';
-  for(var gx=bb.x0+3;gx<=bb.x1-3;gx+=SP){
-    for(var gy=bb.y0+3;gy<=bb.y1-3;gy+=SP){
-      if(!inPoly(gx,gy,green.poly))continue;
-      if(dist2(gx,gy,green.cup.x,green.cup.y)<2.4)continue;
-      if(dist2(gx,gy,G.ballX,G.ballY)<2.4)continue;
-      var si=slopeInfo(green.h,gx,gy);
-      if(si.flat)continue;
-      /* fade chevrons far from the ball: the local read stays crisp,
-         the field stays readable without shouting */
-      var bd=dist2(gx,gy,G.ballX,G.ballY);
-      if(bd>60)continue;
-      var fade=clamp(1.2-bd/48,0.3,1);
-      /* keep chevrons small enough that neighboring tiles don't collide
-         into scribbles on severe greens */
-      var n=si.pct<2.5?1:2;
-      var size=clamp(8+si.pct*2.2,9,18);
-      var alpha=clamp(0.38+si.pct*0.09,0.38,0.7)*fade;
-      var ang=Math.atan2(si.dy,si.dx);
-      /* march DOWNHILL: positions translate along (dx,dy) as flow rises */
-      var flow=((nowS*0.9+(gx*0.7+gy*1.3)*0.05)%1+1)%1;
-      var gap=size*1.25;
-      ctx.strokeStyle='rgba(13,28,52,'+alpha.toFixed(3)+')';
-      ctx.lineWidth=Math.max(2.5,size*0.22);
-      for(var k=0;k<n;k++){
-        var off=(k+flow)*gap;
-        var wx=gx+si.dx*off, wy=gy+si.dy*off;
-        if(!inPoly(wx,wy,green.poly))continue; /* keep chevrons on the green */
-        var s=w2s(wx,wy);
-        var r=size*0.5;
-        ctx.save();ctx.translate(s.x,s.y);ctx.rotate(ang);
-        ctx.beginPath();
-        ctx.moveTo(-r*0.7,-r);ctx.lineTo(r*0.7,0);ctx.lineTo(-r*0.7,r);
-        ctx.stroke();ctx.restore();
-      }
-    }
-  }
-}
 
 /* the aim marker: tap the green to drop it, line shows ball -> marker,
    gold ring + distance pill. Turns gold once the line is locked. */
@@ -524,6 +488,7 @@ function drawGreen(green,state){
   ctx.restore();
   /* fringe outline */
   pathOf(green.poly);
+  ctx.lineJoin='round';
   ctx.strokeStyle='#2e6b33';ctx.lineWidth=Math.max(6,cam.scale*0.35);ctx.stroke();
 
   /* bunkers */
@@ -536,9 +501,6 @@ function drawGreen(green,state){
     ctx.beginPath();ctx.ellipse(0,0,bk.rx*cam.scale*0.7,bk.ry*cam.scale*0.7,0,0,Math.PI*2);ctx.fill();
     ctx.restore();
   }
-
-  /* slope arrows (same gradient the physics uses) */
-  drawSlopeArrows(green);
 
   /* cup: big, dark, impossible to miss -- with a pulsing gold ring */
   var cp=w2s(green.cup.x,green.cup.y);
