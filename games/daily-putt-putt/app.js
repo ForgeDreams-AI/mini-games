@@ -55,6 +55,8 @@ var AIM_SECS=7;          /* aim timer: auto-lock when it hits zero   */
 /* ================= the needle (signature timing mechanic) ==============
    0..100, sweeps up and back down repeatedly. PURE BAND 82-87 sits near
    the top but NOT at the top; 87-100 is the OVER zone. STOP JUST UNDER 100.
+   The sweep is EASED (sqrt): fast off zero, lingering near the top so the
+   gold band is a ~127ms window per pass -- snappy but hittable.
    The sweep gets 3% faster every hole: hole n uses SWEEP_T / 1.03^(n-1). */
 var PURE_LO=82, PURE_HI=87, PURE_MID=84.5;
 var SWEEP_T=1.5;         /* seconds for 0 -> 100 on hole 1 */
@@ -378,6 +380,78 @@ function genHoles(seedStr){
   var holes=[];
   for(var i=0;i<HOLE_DEFS.length;i++)holes.push(buildHole(rng,i));
   return holes;
+}
+
+/* Smarter default aim: follow the fairway's natural line instead of the
+   straight ball->cup line (which on doglegs points into the inner rail).
+   Walks D units along the spine from the ball's projection, then pulls the
+   marker back out of any mover/bumper discs so it never starts inside an
+   obstacle. The player can still move it freely. */
+function spinePointAt(spine,sTarget){
+  var s=0;
+  for(var i=0;i<spine.length-1;i++){
+    var ax=spine[i][0],ay=spine[i][1],bx=spine[i+1][0],by=spine[i+1][1];
+    var L=Math.hypot(bx-ax,by-ay);
+    if(sTarget<=s+L||i===spine.length-2){
+      var t=L>1e-9?Math.max(0,Math.min(1,(sTarget-s)/L)):0;
+      return{x:ax+(bx-ax)*t,y:ay+(by-ay)*t};
+    }
+    s+=L;
+  }
+  return{x:spine[spine.length-1][0],y:spine[spine.length-1][1]};
+}
+function defaultAim(h,bx,by){
+  var s0=0,bestD=1e9,s=0,i,ax,ay,dx,dy,L2,t;
+  for(i=0;i<h.spine.length-1;i++){
+    ax=h.spine[i][0];ay=h.spine[i][1];
+    dx=h.spine[i+1][0]-ax;dy=h.spine[i+1][1]-ay;L2=dx*dx+dy*dy||1e-9;
+    t=Math.max(0,Math.min(1,((bx-ax)*dx+(by-ay)*dy)/L2));
+    var px=ax+dx*t,py=ay+dy*t,d=Math.hypot(bx-px,by-py);
+    if(d<bestD){bestD=d;s0=s+Math.sqrt(L2)*t;}
+    s+=Math.sqrt(L2);
+  }
+  var distBC=Math.hypot(h.cup.x-bx,h.cup.y-by);
+  var D=Math.max(12,Math.min(20,distBC*0.5));
+  var m=spinePointAt(h.spine,Math.min(s0+D,Math.max(0,s-0.5)));
+  /* keep the marker out of mover discs / bumpers: pull back toward ball */
+  var mx=m.x,my=m.y;
+  var ux=mx-bx,uy=my-by,Lm=Math.hypot(ux,uy)||1;ux/=Lm;uy/=Lm;
+  function clearR(cx,cy,r){
+    var d=Math.hypot(mx-cx,my-cy);
+    if(d<r){
+      var nl=Math.max(3,Lm-r-0.05);
+      mx=bx+ux*nl;my=by+uy*nl;
+      Lm=Math.hypot(mx-bx,my-by)||1;ux=(mx-bx)/Lm;uy=(my-by)/Lm;
+    }
+  }
+  for(i=0;i<h.movers.length;i++){
+    var mv=h.movers[i];
+    if(mv.type==='blade')clearR(mv.cx,mv.cy,mv.len+1.2);
+    else if(mv.type==='gate')clearR((mv.x1+mv.x2)/2,(mv.y1+mv.y2)/2,(mv.amp||0)+1.5);
+  }
+  for(i=0;i<h.bumpers.length;i++)clearR(h.bumpers[i].x,h.bumpers[i].y,h.bumpers[i].r+1.2);
+  return{x:mx,y:my};
+}
+
+/* Generous tap region: the whole playable lane, including near-rail areas.
+   inPoly alone wrongly rejects inside-lane points where the dogleg's offset
+   polygon folds (even-odd rule), so also accept the spine-offset "capsule
+   chain" (dist to spine <= half-width + margin), without extending past the
+   spine ends where the rails stop. */
+function laneOk(h,x,y){
+  if(inPoly(x,y,h.poly))return true;
+  var sp=h.spine,n=sp.length,lim=h.w+0.15;
+  for(var i=0;i<n-1;i++){
+    var ax=sp[i][0],ay=sp[i][1],bx=sp[i+1][0],by=sp[i+1][1];
+    var dx=bx-ax,dy=by-ay,L2=dx*dx+dy*dy||1e-9;
+    var t=((x-ax)*dx+(y-ay)*dy)/L2;
+    if(i===0&&t<0)continue;
+    if(i===n-2&&t>1)continue;
+    var tc=t<0?0:(t>1?1:t);
+    var ddx=x-(ax+dx*tc),ddy=y-(ay+dy*tc);
+    if(ddx*ddx+ddy*ddy<=lim*lim)return true;
+  }
+  return false;
 }
 
 /* ================= physics sim (pure -- testable) =================
@@ -949,7 +1023,8 @@ function startHole(){
   fitStatic(h);
   buildShade(h);
   G.phase='aim';
-  G.markerX=h.cup.x;G.markerY=h.cup.y;G.markerSet=true;
+  var _da0=defaultAim(h,h.ball.x,h.ball.y);
+  G.markerX=_da0.x;G.markerY=_da0.y;G.markerSet=true;
   G.ballX=h.ball.x;G.ballY=h.ball.y;
   G.putts=0;
   G.trail=[];G.holed=false;G.holeT=0;G.rolling=null;
@@ -998,7 +1073,7 @@ function placeMarkerAt(cx,cy,offPx){
   var offs=offPx?[offPx,32,16,0]:[0];
   for(var i=0;i<offs.length;i++){
     var w=s2w(cx,cy-offs[i]);
-    if(!inPoly(w.x,w.y,h.poly))continue;
+    if(!laneOk(h,w.x,w.y))continue;
     if(dist2(w.x,w.y,G.ballX,G.ballY)<1.5)continue;
     G.markerX=w.x;G.markerY=w.y;G.markerSet=true;
     return true;
@@ -1093,7 +1168,8 @@ function settleStroke(){
   if(r.hazard){
     /* SPLASH: back to where the stroke started, the stroke counts */
     G.phase='aim';
-    G.markerX=h.cup.x;G.markerY=h.cup.y;G.markerSet=true;
+    var _da1=defaultAim(h,G.ballX,G.ballY);
+    G.markerX=_da1.x;G.markerY=_da1.y;G.markerSet=true;
     G.trail=[];G.rolling=null;
     resultLine.innerHTML='<span class="grade g-splash">SPLASH</span>Re-hit from here \u2014 PUTT '+(G.putts+1)+' OF 6';
     resultLine.classList.remove('hidden');
@@ -1144,7 +1220,8 @@ function settleStroke(){
   resultLine.innerHTML=gradeHtml+detail+bendTxt;
   resultLine.classList.remove('hidden');
   G.phase='aim';
-  G.markerX=h.cup.x;G.markerY=h.cup.y;G.markerSet=true;
+  var _da2=defaultAim(h,G.ballX,G.ballY);
+  G.markerX=_da2.x;G.markerY=_da2.y;G.markerSet=true;
   G.trail=[];G.rolling=null;
   startAimTimer();
   setBtn('lock');
@@ -1195,13 +1272,17 @@ function frame(t){
       if(remain<=0){lockAim();}
     }
     if(G.phase==='sweep'){
-      /* needle sweeps up and back down, 3% faster every hole */
+      /* Needle sweep: eased, not linear. It launches fast off zero and
+         LINGERS near the top, so the gold band (82-87) is a ~127ms window
+         per pass instead of 75ms on a triangle wave -- snappy but hittable.
+         0 -> 100 still takes sd seconds (spec); the 3%/hole ramp is in
+         sweepDur and is untouched. Turnaround keeps the instant reversal. */
       if(G.sweepT0==null)G.sweepT0=t;
       var el=(t-G.sweepT0)/1000;
       var sd=sweepDur(G.hole);
       var p=(el/sd)%2;
-      G.needle=p<1?p*100:(2-p)*100;
-      needleEl.style.left='calc('+G.needle.toFixed(2)+'% - 5.5px)';
+      G.needle=100*Math.sqrt(p<1?p:2-p);
+      needleEl.style.left='calc('+G.needle.toFixed(2)+'% - 9px)';
     }
     if(G.phase==='roll'&&G.rolling){
       var rr=G.rolling;
@@ -1452,6 +1533,7 @@ var PuttPuttTest={
   resolveStroke:resolveStroke,puttOutcome:puttOutcome,
   scoreName:scoreName,fmtVsPar:fmtVsPar,shadeGrid:shadeGrid,
   sweepDur:sweepDur,AIM_SECS:AIM_SECS,
+  defaultAim:defaultAim,laneOk:laneOk,spinePointAt:spinePointAt,
   consts:{FRICTION:FRICTION,SLOPE_G:SLOPE_G,CUP_R:CUP_R,V_CAP:V_CAP,DMAX:DMAX,
     BAR_MAX:BAR_MAX,V_STOP:V_STOP,BALL_R:BALL_R,RAIL_REST:RAIL_REST}
 };

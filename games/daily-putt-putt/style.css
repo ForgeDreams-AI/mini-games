@@ -52,9 +52,9 @@ html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; background: 
   background: #fbbf24; box-shadow: 0 0 12px #fbbf24; }
 #overZone { position: absolute; top: 0; bottom: 0; left: 87%; width: 13%;
   background: repeating-linear-gradient(45deg,#ef4444,#ef4444 8px,#b91c1c 8px,#b91c1c 16px); }
-#needle { position: absolute; top: -4px; bottom: -4px; left: 0; width: 11px;
-  background: #fff; border: 2px solid #111827; border-radius: 3px;
-  box-shadow: 0 0 14px rgba(255,255,255,.95), 0 0 4px rgba(255,255,255,1); }
+#needle { position: absolute; top: -4px; bottom: -4px; left: 0; width: 18px; z-index: 2;
+  background: #0f172a; border: 3px solid #ffffff; border-radius: 5px;
+  box-shadow: 0 0 16px rgba(255,255,255,.9), 0 0 6px rgba(0,0,0,.85); }
 #needleNums { position: relative; height: 20px; margin-top: 4px; }
 .nn0,.nnpure,.nnover,.nn100 { position: absolute; font-size: 11px; font-weight: 900;
   color: #fff; text-shadow: 0 1px 3px rgba(0,0,0,.7); }
